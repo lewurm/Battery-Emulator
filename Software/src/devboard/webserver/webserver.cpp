@@ -13,6 +13,7 @@ AsyncWebServer server(80);
 unsigned long ota_progress_millis = 0;
 
 #include "advanced_battery_html.h"
+#include "canlogger_html.h"
 #include "cellmonitor_html.h"
 #include "events_html.h"
 #include "index_html.cpp"
@@ -53,6 +54,11 @@ void init_webserver() {
   // Route for going to advanced battery info web page
   server.on("/advanced", HTTP_GET, [](AsyncWebServerRequest* request) {
     request->send_P(200, "text/html", index_html, advanced_battery_processor);
+  });
+
+    // Route for going to canlogger web page
+  server.on("/canlogger", HTTP_GET, [](AsyncWebServerRequest* request) {
+    request->send_P(200, "text/html", index_html, canlogger_processor);
   });
 
   // Route for going to cellmonitor web page
@@ -886,6 +892,7 @@ String processor(const String& var) {
     content += "<button onclick='OTA()'>Perform OTA update</button> ";
     content += "<button onclick='Settings()'>Change Settings</button> ";
     content += "<button onclick='Advanced()'>More Battery Info</button> ";
+    content += "<button onclick='Canlogger()'>CAN logger</button> ";
     content += "<button onclick='Cellmon()'>Cellmonitor</button> ";
     content += "<button onclick='Events()'>Events</button> ";
     content += "<button onclick='askReboot()'>Reboot Emulator</button>";
@@ -910,6 +917,7 @@ String processor(const String& var) {
     content += "function Cellmon() { window.location.href = '/cellmonitor'; }";
     content += "function Settings() { window.location.href = '/settings'; }";
     content += "function Advanced() { window.location.href = '/advanced'; }";
+    content += "function Canlogger() { window.location.href = '/canlogger'; }";
     content += "function Events() { window.location.href = '/events'; }";
     content +=
         "function askReboot() { if (window.confirm('Are you sure you want to reboot the emulator? NOTE: If "
