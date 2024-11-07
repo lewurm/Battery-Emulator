@@ -24,10 +24,85 @@ static unsigned long contactorMillis = 0;
 
 static boolean RX_allow = false;
 
+static byte calculate_kostal_crc(byte *lfc, int len);
+static void scramble_null_bytes(byte *lfc, int len);
+
 union f32b {
   float f;
   byte b[4];
 };
+
+union u32b {
+  byte b[4];
+  uint32_t u;
+};
+
+typedef struct {
+    uint8_t reserved0; // used by byte scrambler, contains index of first null byte
+    uint8_t kind; // known values 0xe2, 0xe3, 0x63
+    u32b header; // always 0x29ff02ff ?
+
+    f32b nominal_voltage;  // offset: 0x6 /  6
+    u32b manufacture_date; // offset: 0xa / 10
+    u32b serial_number;    // offset: 0xe / 14
+    /* ... */
+
+    uint8_t crc;
+    uint8_t eof; // end of frame, always 0x00
+} kostalframe_battery_info;
+
+typedef struct {
+    uint8_t reserved0; // used by byte scrambler, contains index of first null byte
+    uint8_t kind; // known values 0xe2, 0xe3, 0x63
+    u32b header; // always 0x29ff02ff ?
+
+    f32b current_voltage;  // offset: 0x6 /  6
+    f32b max_voltage;      // offset: 0xa / 10
+    /* ... */
+
+    uint8_t crc;
+    uint8_t eof; // end of frame, always 0x00
+} kostalframe_cyclic_data;
+
+kostalframe_battery_info fbi = { // "frame battery info"
+    .reserved0 = 0x00,
+    .kind = 0xe2,
+    .header = {0xff, 0x02, 0xff, 0x29},
+
+    .nominal_voltage = 0.0f,
+    .manufacture_date = {0xe4, 0x70, 0x8a, 0x5c},
+    .serial_number = {0xb5, 0x00, 0xd3, 0x00},
+    /* ... */
+
+    .crc = 0x00,
+    .eof = 0x00,
+};
+
+kostalframe_cyclic_data fcd = { // "frame cyclic data"
+    .reserved0 = 0x0,
+    .kind = 0xe2,
+    .header = {0xff, 0x02, 0xff, 0x29},
+
+    .current_voltage = 0.0f,
+    .max_voltage = 0.0f,
+    /* ... */
+
+    .crc = 0x00,
+    .eof = 0x00,
+};
+
+// just an example, delete me
+void update() {
+    fbi.nominal_voltage.f = (float) nominal_voltage_dV / 10;
+
+    fcd.current_voltage.f = (float) datalayer.battery.status.voltage_dV / 10;
+
+    /* ... */
+
+    fbi.crc = calculate_kostal_crc((byte *) &fbi, sizeof(fbi) - 2);
+    scramble_null_bytes((byte *) &fbi, sizeof(fbi));
+}
+
 
 uint8_t BATTERY_INFO[40] = {0x00, 0xE2, 0xFF, 0x02, 0xFF, 0x29,  // Frame header
                       0x00, 0x00, 0x80, 0x43,  // 256.063 Nominal voltage / 5*51.2=256      first byte 0x01 or 0x04
@@ -115,7 +190,7 @@ void send_kostal(byte* arr, int alen) {
   Serial2.write(arr, alen);
 }
 
-void scramble_null_bytes(byte *lfc, int len) {
+static void scramble_null_bytes(byte *lfc, int len) {
   int last_null_byte = 0;
   for (int i = 0; i < len; i++) {
     if (lfc[i] == '\0') {
@@ -125,7 +200,7 @@ void scramble_null_bytes(byte *lfc, int len) {
   }
 }
 
-byte calculate_kostal_crc(byte *lfc, int len) {
+static byte calculate_kostal_crc(byte *lfc, int len) {
   unsigned int sum = 0;
   if (lfc[0] != 0) {
       printf("WARNING: first byte should be 0, but is 0x%02x\n", lfc[0]);
