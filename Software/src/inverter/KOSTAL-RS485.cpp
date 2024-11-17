@@ -59,21 +59,21 @@ uint8_t CyclicData[64] = {
     0x00, 0x00, 0xC8, 0x41,  // Battery gross capacity, Ah (2 byte float) , Bytes 30-33, Modbus 512
     0x00, 0x00, 0xA0, 0x41,  // Max charge current (2 byte float) Bit 36-37, ZERO WHEN SOC=100
                              // Sunspec: AChaMax
-    0xCD, 0xCC, 0xB4, 0x41,  // MaxCellTemp (4 byte float) Bit 38-41
-    0x00, 0x00, 0xA4, 0x41,  // MinCellTemp (4 byte float) Bit 42-45
-    0xA4, 0x70, 0x55, 0x40,  // MaxCellVolt  (float), Bit 46-49
-    0x7D, 0x3F, 0x55, 0x40,  // MinCellVolt  (float), Bit 50-53
+    0xCD, 0xCC, 0xB4, 0x41,  // MaxCellTemp (float), Bytes 38-41
+    0x00, 0x00, 0xA4, 0x41,  // MinCellTemp (float), Bytes 42-45
+    0xA4, 0x70, 0x55, 0x40,  // MaxCellVolt (float), Bytes 46-49
+    0x7D, 0x3F, 0x55, 0x40,  // MinCellVolt (float), Bytes 50-53
 
-    0xFE, 0x04,              // Cycle count, 
+    0xFE, 0x04,              // Cycle count (uint16), Bytes 54-55
     0x00,                    // Byte 56
-    0x00,                    // When SOC=100 Byte57=0x39, at startup 0x03 (about 7 times), otherwise 0x02
+    0x40,                    // When SOC=100 Byte57 (=0x39), at startup 0x03 (about 7 times), otherwise 0x02
                              // lewurm: Valid bits:
                              //    (1 << 0): ???
                              //    (1 << 3 | 1 << 4): ??? but only comes as pair
                              //    (1 << 7): ???
                              //
                              //    remaining bits should never be set? Does not match with observations...?
-    0x64,                    // SOC , Bit 58
+    0x64,                    // SOC , Byte 58
     0x00,                    // Unknown,
     0x00,                    // Unknown,
     0x00,                    // Unknown,
@@ -205,7 +205,7 @@ void update_RS485_registers_inverter() {
   nominal_voltage_dV =
       (((datalayer.battery.info.max_design_voltage_dV - datalayer.battery.info.min_design_voltage_dV) / 2) +
        datalayer.battery.info.min_design_voltage_dV);
-  float2frame(BATTERY_INFO, (float)nominal_voltage_dV / 10.0f, 8);
+  float2frame(BATTERY_INFO, (float)355.0f, 8);
 
   float2frame(CyclicData, (float)datalayer.battery.info.max_design_voltage_dV / 10.0f, 10);
 
@@ -217,7 +217,12 @@ void update_RS485_registers_inverter() {
 
   float2frame(CyclicData, (float)13.0f, 26);  // max discharge current (float)
 
+# if 0
   float2frame(CyclicData, (float)164.3f, 30); // battery Ah
+#else
+  /* from BYD trace... maybe too large batteries are rejected? */
+  float2frame(CyclicData, (float)25.0f, 30); // battery Ah
+#endif
 
   // When SOC = 100%, drop down allowed charge current down.
 
