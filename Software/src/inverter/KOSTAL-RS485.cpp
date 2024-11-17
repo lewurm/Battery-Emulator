@@ -50,11 +50,11 @@ uint8_t CyclicData[64] = {
     0x00,                          // First zero byte pointer
     0xE2, 0xFF, 0x02, 0xFF, 0x29,  // frame Header
     0x1D, 0x5A, 0x85, 0x43,  // Current Voltage  (float)                        Modbus register 216, Bytes 6-9
-    0x00, 0x00, 0x8D, 0x43,  // Max Voltage      (2 byte float),                                     Bytes 12-13
-    0x00, 0x00, 0xAC, 0x41,  // BAttery Temperature        (2 byte float)       Modbus register 214, Bytes 16-17
+    0x00, 0x00, 0x8D, 0x43,  // Max Voltage      (float),                                     Bytes 10-13
+    0x00, 0x00, 0xAC, 0x41,  // BAttery Temperature        (float)       Modbus register 214, Bytes 14-17
     0x00, 0x00, 0x00, 0x00,  // Peak Current (1s period?),  Bytes 18-21 - Communication fault seen with some values (>10A?)
     0x00, 0x00, 0x00, 0x00,  // Avg current  (1s period?),  Bytes 22-25  - Communication fault seen with some values (>10A?)
-    0x00, 0x00, 0x48, 0x42,  // Max discharge current (2 byte float), Bit 26-29,
+    0x00, 0x00, 0x48, 0x42,  // Max discharge current (float), Bytes 26-29,
                              // Sunspec: ADisChaMax
     0x00, 0x00, 0xC8, 0x41,  // Battery gross capacity, Ah (2 byte float) , Bytes 30-33, Modbus 512
     0x00, 0x00, 0xA0, 0x41,  // Max charge current (2 byte float) Bit 36-37, ZERO WHEN SOC=100
@@ -66,7 +66,13 @@ uint8_t CyclicData[64] = {
 
     0xFE, 0x04,              // Cycle count, 
     0x00,                    // Byte 56
-    0x00,                    // When SOC=100 Byte57=0x40, at startup 0x03 (about 7 times), otherwise 0x02
+    0x00,                    // When SOC=100 Byte57=0x39, at startup 0x03 (about 7 times), otherwise 0x02
+                             // lewurm: Valid bits:
+                             //    (1 << 0): ???
+                             //    (1 << 3 | 1 << 4): ??? but only comes as pair
+                             //    (1 << 7): ???
+                             //
+                             //    remaining bits should never be set? Does not match with observations...?
     0x64,                    // SOC , Bit 58
     0x00,                    // Unknown,
     0x00,                    // Unknown,
@@ -191,7 +197,7 @@ void update_RS485_registers_inverter() {
   }
 
   if (datalayer.system.status.battery_allows_contactor_closing & datalayer.system.status.inverter_allows_contactor_closing ) {
-    float2frame(CyclicData, (float)datalayer.battery.status.voltage_dV / 10, 6);  // Confirmed OK mapping
+    float2frame(CyclicData, (float)datalayer.battery.status.voltage_dV / 10.0f, 6);  // Confirmed OK mapping
   } else {
     float2frame(CyclicData, 0.0, 6);
   }
@@ -199,30 +205,30 @@ void update_RS485_registers_inverter() {
   nominal_voltage_dV =
       (((datalayer.battery.info.max_design_voltage_dV - datalayer.battery.info.min_design_voltage_dV) / 2) +
        datalayer.battery.info.min_design_voltage_dV);
-  float2frame(BATTERY_INFO, (float)nominal_voltage_dV / 10, 8);
+  float2frame(BATTERY_INFO, (float)nominal_voltage_dV / 10.0f, 8);
 
-  float2frame(CyclicData, (float)datalayer.battery.info.max_design_voltage_dV / 10, 12);
+  float2frame(CyclicData, (float)datalayer.battery.info.max_design_voltage_dV / 10.0f, 10);
 
-  float2frame(CyclicData, (float)average_temperature_dC / 10, 16);
+  float2frame(CyclicData, (float)10.0f, 14); // temperature
 
   //  Some current values causes communication error, must be resolved, why.
-  float2frame(CyclicData, (float)datalayer.battery.status.current_dA / 10, 20);  // Peak discharge? current (2 byte float)
-  float2frame(CyclicData, (float)datalayer.battery.status.current_dA / 10, 24);
+  float2frame(CyclicData, (float)12.0f, 18);  // Peak discharge? current (float)
+  float2frame(CyclicData, (float)12.0f, 22);  // avg current (float)
 
-  float2frame(CyclicData, (float)discharge_current_dA / 10, 28);  // BAttery capacity Ah
+  float2frame(CyclicData, (float)13.0f, 26);  // max discharge current (float)
 
-  float2frame(CyclicData, (float)discharge_current_dA / 10, 32);
+  float2frame(CyclicData, (float)164.3f, 30); // battery Ah
 
   // When SOC = 100%, drop down allowed charge current down.
 
   if ((datalayer.battery.status.reported_soc / 100) < 100) {
-    float2frame(CyclicData, (float)charge_current_dA / 10, 36);
+    float2frame(CyclicData, 5.0f, 34);
   } else {
-    float2frame(CyclicData, 0.0, 36);
+    float2frame(CyclicData, 0.0, 34);
   }
 
-  float2frame(CyclicData, (float)datalayer.battery.status.temperature_max_dC / 10, 38);
-  float2frame(CyclicData, (float)datalayer.battery.status.temperature_min_dC / 10, 42);
+  float2frame(CyclicData, (float)16.0f, 38);
+  float2frame(CyclicData, (float)14.0f, 42);
 
   float2frame(CyclicData, (float)datalayer.battery.status.cell_max_voltage_mV / 1000, 46);
   float2frame(CyclicData, (float)datalayer.battery.status.cell_min_voltage_mV / 1000, 50);
