@@ -44,6 +44,29 @@ uint8_t BATTERY_INFO[40] = {0x00, 0xE2, 0xFF, 0x02, 0xFF, 0x29,  // Frame header
                       0x4D,   // CRC
                       0x00};  //
 
+
+// example (null descrambled)
+   // 00: 00
+   // 01: E2 FF 02 FF 29
+   // 06: E5 10 82 43   // current voltage, 260.132f V
+   // 10: 00 00 8D 43   // max design voltage, 282.0f V
+   // 14: CD CC 88 41   // temperature, 17.1f °C
+   // 18: 9A 99 99 3F   // peak discharge current, 1.2f A
+   // 22: 99 99 99 3F   // avg. current, 1.19f A
+   // 26: 00 00 48 42   // max discharge current, 50.0f A
+   // 30: 00 00 C8 41   // battery cap Ah, 25.0f Ah
+   // 34: 00 00 A0 41   // max charge current , 25.0f A
+   // 38: 00 00 88 41   // cell temp max, 17.0f °C
+   // 42: 9A 99 81 41   // cell temp min, 16.2f °C
+   // 46: 12 83 50 40   // cell voltage max, 3.258f V
+   // 50: 29 5C 4F 40   // cell voltage min, 3.240f V
+   // 54: 68 00
+   // 56: 00
+   // 57: 00
+   // 58: 14 // SoC
+   // 59: 00 00 00
+   // 62: 0B // CRC
+
 // values in CyclicData will be overwritten at update_modbus_registers_inverter()
 
 uint8_t CyclicData[64] = {
@@ -64,9 +87,10 @@ uint8_t CyclicData[64] = {
     0xA4, 0x70, 0x55, 0x40,  // MaxCellVolt (float), Bytes 46-49
     0x7D, 0x3F, 0x55, 0x40,  // MinCellVolt (float), Bytes 50-53
 
-    0xFE, 0x04,              // Cycle count (uint16), Bytes 54-55
+    0x39, 0x05,              // Cycle count (uint16), Bytes 54-55
     0x00,                    // Byte 56
-    0x40,                    // When SOC=100 Byte57 (=0x39), at startup 0x03 (about 7 times), otherwise 0x02
+    0x00,                    // When SOC=100 Byte57 (=0x39), > at startup 0x03 (about 7 times), otherwise 0x02
+                             //                               ^^^^ actually I think those have been confused with 0x00 due to null byte scrambling
                              // lewurm: Valid bits:
                              //    (1 << 0): ???
                              //    (1 << 3 | 1 << 4): ??? but only comes as pair
@@ -197,7 +221,7 @@ void update_RS485_registers_inverter() {
   }
 
   if (datalayer.system.status.battery_allows_contactor_closing & datalayer.system.status.inverter_allows_contactor_closing ) {
-    float2frame(CyclicData, (float)datalayer.battery.status.voltage_dV / 10.0f, 6);  // Confirmed OK mapping
+    float2frame(CyclicData, (float)375.0f, 6);  // Confirmed OK mapping
   } else {
     float2frame(CyclicData, 0.0, 6);
   }
@@ -205,15 +229,15 @@ void update_RS485_registers_inverter() {
   nominal_voltage_dV =
       (((datalayer.battery.info.max_design_voltage_dV - datalayer.battery.info.min_design_voltage_dV) / 2) +
        datalayer.battery.info.min_design_voltage_dV);
-  float2frame(BATTERY_INFO, (float)355.0f, 8);
+  float2frame(BATTERY_INFO, (float)375.0f, 8);
 
-  float2frame(CyclicData, (float)datalayer.battery.info.max_design_voltage_dV / 10.0f, 10);
+  float2frame(CyclicData, (float)423.0f, 10); // max voltage
 
-  float2frame(CyclicData, (float)10.0f, 14); // temperature
+  float2frame(CyclicData, (float)17.1f, 14); // temperature
 
   //  Some current values causes communication error, must be resolved, why.
-  float2frame(CyclicData, (float)12.0f, 18);  // Peak discharge? current (float)
-  float2frame(CyclicData, (float)12.0f, 22);  // avg current (float)
+  float2frame(CyclicData, (float)2.0f, 18);  // Peak discharge? current (float)
+  float2frame(CyclicData, (float)1.8f, 22);  // avg current (float)
 
   float2frame(CyclicData, (float)13.0f, 26);  // max discharge current (float)
 
@@ -227,16 +251,16 @@ void update_RS485_registers_inverter() {
   // When SOC = 100%, drop down allowed charge current down.
 
   if ((datalayer.battery.status.reported_soc / 100) < 100) {
-    float2frame(CyclicData, 5.0f, 34);
+    float2frame(CyclicData, 13.0f, 34); // max charge current
   } else {
     float2frame(CyclicData, 0.0, 34);
   }
 
-  float2frame(CyclicData, (float)16.0f, 38);
-  float2frame(CyclicData, (float)14.0f, 42);
+  float2frame(CyclicData, (float)17.0f, 38); // cell temp max
+  float2frame(CyclicData, (float)16.2f, 42); // cell temp min
 
-  float2frame(CyclicData, (float)datalayer.battery.status.cell_max_voltage_mV / 1000, 46);
-  float2frame(CyclicData, (float)datalayer.battery.status.cell_min_voltage_mV / 1000, 50);
+  float2frame(CyclicData, (float)3.258f, 46); // cell voltage max
+  float2frame(CyclicData, (float)3.240f, 50); // cell voltage min
 
   CyclicData[58] = (byte)(datalayer.battery.status.reported_soc / 100);  // Confirmed OK mapping
 
