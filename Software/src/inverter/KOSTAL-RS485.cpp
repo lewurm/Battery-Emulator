@@ -221,7 +221,7 @@ void update_RS485_registers_inverter() {
   }
 
   if (datalayer.system.status.battery_allows_contactor_closing & datalayer.system.status.inverter_allows_contactor_closing ) {
-    float2frame(CyclicData, (float)375.0f, 6);  // Confirmed OK mapping
+    float2frame(CyclicData, (float)datalayer.battery.status.voltage_dV / 10, 6); // Confirmed OK mapping
   } else {
     float2frame(CyclicData, 0.0, 6);
   }
@@ -236,8 +236,8 @@ void update_RS485_registers_inverter() {
   float2frame(CyclicData, (float)17.1f, 14); // temperature
 
   //  Some current values causes communication error, must be resolved, why.
-  float2frame(CyclicData, (float)2.0f, 18);  // Peak discharge? current (float)
-  float2frame(CyclicData, (float)1.8f, 22);  // avg current (float)
+  float2frame(CyclicData, (float)datalayer.battery.status.current_dA / 10, 18);  // Peak discharge? current (float)
+  float2frame(CyclicData, (float)datalayer.battery.status.current_dA / 10, 22);  // avg current (float)
 
   float2frame(CyclicData, (float)13.0f, 26);  // max discharge current (float)
 

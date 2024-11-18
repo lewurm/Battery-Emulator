@@ -73,6 +73,10 @@ String settings_processor(const String& var) {
         static_cast<float>(datalayer.battery.status.voltage_dV) / 10.0;  // Convert to float and divide by 10
     content += "<h4 style='color: white;'>Fake battery voltage: " + String(voltageFloat, 1) +
                " V </span> <button onclick='editFakeBatteryVoltage()'>Edit</button></h4>";
+    float currentFloat =
+        static_cast<float>(datalayer.battery.status.current_dA) / 10.0;  // Convert to float and divide by 10
+    content += "<h4 style='color: white;'>Fake battery current: " + String(currentFloat, 2) +
+               " A </span> <button onclick='editFakeBatteryCurrent()'>Edit</button></h4>";
 
     // Close the block
     content += "</div>";
@@ -165,6 +169,12 @@ String settings_processor(const String& var) {
         "XMLHttpRequest();xhr.onload=editComplete;xhr.onerror=editError;xhr.open('GET','/"
         "updateFakeBatteryVoltage?value='+value,true);xhr.send();}else{alert('Invalid value. Please enter a value "
         "between 0 and 1000');}}}";
+    content +=
+        "function editFakeBatteryCurrent(){var value=prompt('Enter new fake battery "
+        "current');if(value!==null){if(value>=-30&&value<=30){var xhr=new "
+        "XMLHttpRequest();xhr.onload=editComplete;xhr.onerror=editError;xhr.open('GET','/"
+        "updateFakeBatteryCurrent?value='+value,true);xhr.send();}else{alert('Invalid value. Please enter a value "
+        "between -30 and 30');}}}";
 #endif
 
 #if defined CHEVYVOLT_CHARGER || defined NISSANLEAF_CHARGER

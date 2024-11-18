@@ -247,6 +247,21 @@ void init_webserver() {
 
     request->send(200, "text/plain", "Updated successfully");
   });
+  // Route for editing FakeBatteryCurrent
+  server.on("/updateFakeBatteryCurrent", HTTP_GET, [](AsyncWebServerRequest* request) {
+    if (WEBSERVER_AUTH_REQUIRED && !request->authenticate(http_username, http_password))
+      return request->requestAuthentication();
+    if (!request->hasParam("value")) {
+      request->send(400, "text/plain", "Bad Request");
+    }
+
+    String value = request->getParam("value")->value();
+    float val = value.toFloat();
+
+    datalayer.battery.status.current_dA = val * 10;
+
+    request->send(200, "text/plain", "Updated successfully");
+  });
 #endif  // TEST_FAKE_BATTERY
 
 #if defined CHEVYVOLT_CHARGER || defined NISSANLEAF_CHARGER
