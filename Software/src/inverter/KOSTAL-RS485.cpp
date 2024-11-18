@@ -98,7 +98,7 @@ uint8_t CyclicData[64] = {
                              //
                              //    remaining bits should never be set? Does not match with observations...?
     0x64,                    // SOC , Byte 58
-    0x00,                    // Unknown,
+    0x00,                    // Unknown,  Byte 59, startup magic
     0x00,                    // Unknown,
     0x00,                    // Unknown,
     0x00,                    // CRC (inverted sum of bytes 1-62 + 0xC0), Bit 62
@@ -253,7 +253,15 @@ void update_RS485_registers_inverter() {
   if ((datalayer.battery.status.reported_soc / 100) < 100) {
     float2frame(CyclicData, 13.0f, 34); // max charge current
   } else {
-    float2frame(CyclicData, 0.0, 34);
+    Serial.println("should not reach, max charge current");
+    float2frame(CyclicData, 4.0, 34);
+  }
+
+  // On startup, byte 59 seems to be always 0x02 couple of frames
+  if (f2_startup_count < 14) {
+    CyclicData[59] = 0x02; // magic
+  } else {
+    CyclicData[59] = 0x00; // delete magic
   }
 
   float2frame(CyclicData, (float)17.0f, 38); // cell temp max
