@@ -88,24 +88,47 @@ uint8_t CyclicData[64] = {
     0x7D, 0x3F, 0x55, 0x40,  // MinCellVolt (float), Bytes 50-53
 
     0x39, 0x05,              // Cycle count (uint16), Bytes 54-55
-    0x00,                    // Byte 56
+                             //
+                             //
+    0x00,                    // Byte 56. If set to 1, alarm state?   There is a relationship between Byte 56 and Byte 57.
+                             //
     0x00,                    // When SOC=100 Byte57 (=0x39), > at startup 0x03 (about 7 times), otherwise 0x02
-                             //                               ^^^^ actually I think those have been confused with 0x00 due to null byte scrambling
+                             //                               ^^^^ actually I think those have been confused with 0x00 in the past
+                             //                                    due to null byte scrambling
+                             //
                              // lewurm: Valid bits:
-                             //    (1 << 0): ???
-                             //    (1 << 3 | 1 << 4): ??? but only comes as pair
-                             //    (1 << 7): ???
+                             //    1: ArriveAlarm
+                             //    2: ArriveWarning
+                             //    8 | 0x10: ??? but only comes as pair
+                             //    0x40: flag set by "CellOverVoltageManage" `(this + 0x115c) & 0x10`, so probably means "full"
                              //
                              //    remaining bits should never be set? Does not match with observations...?
+                             //
     0x64,                    // SOC , Byte 58
-    0x00,                    // Unknown,  Byte 59, startup magic
+                             //
+    0x00,                    // Unknown,  Byte 59, startup magic?  Can be 2 or 0.  maybe contactors?
+                             //        ```
+                             //        uVar4 = *(uint *)(*(int *)(this + 0x10cc) + 0x29e8);
+                             //        if (((uVar4 & 1) == 0) || ((uVar4 & 4) != 0)) {
+                             //          this[0x10a1] = (TKOSTALComm)0x2;
+                             //        }
+                             //
+    0x00,                    // Unknown,  Byte 60, startup magic?  Can be 1 or 0.  or always 0?
+                             //        ```
+                             //          iVar5 = (**(code **)(this + 0x114c))(*(undefined4 *)(this + 0x10dc),0x10);
+                             //          if (iVar5 == 0) {
+                             //            this[0x10a2] = (TKOSTALComm)0x0;
+                             //          }
+                             //          else {
+                             //            this[0x10a2] = (TKOSTALComm)0x1;
+                             //          }
+                             //
     0x00,                    // Unknown,
-    0x00,                    // Unknown,
-    0x00,                    // CRC (inverted sum of bytes 1-62 + 0xC0), Bit 62
+    0x00,                    // CRC, Byte 62
     0x00};
 
-// FE 04 01 40 xx 01 01 02 yy (fully charged)
-// FE 02 01 02 xx 01 01 02 yy (charging or discharging)
+// FE 00 01 40 SOC 00 00 00 CRC (fully charged)
+// FE 00 01 00 SOC 01 01 02 CRC (charging or discharging)
 
 uint8_t frame3[9] = {
     0x08, 0xE2, 0xFF, 0x02, 0xFF, 0x29,  //header
@@ -322,6 +345,7 @@ void receive_RS485()  // Runs as fast as possible to handle the serial stream
     if (RX_allow) {
       rx_index++;
       if (RS485_RXFRAME[rx_index - 1] == 0x00) {
+        // TODO: check that receiving header matches with sending header
         if ((rx_index == 10) && (RS485_RXFRAME[0] == 0x09) && register_content_ok) {
 #ifdef DEBUG_KOSTAL_RS485_DATA
           Serial.print("RX: ");
@@ -370,7 +394,7 @@ void receive_RS485()  // Runs as fast as possible to handle the serial stream
                   byte tmpframe[64];  //copy values to prevent data manipulation during rewrite/crc calculation
                   memcpy(tmpframe, CyclicData, 64);
                   tmpframe[62] = calculate_kostal_crc(tmpframe, 62);
-                  scramble_null_bytes(tmpframe,64);
+                  scramble_null_bytes(tmpframe,65);
                   send_kostal(tmpframe, 64);
                 }
                 if (code == 0x84a) {
