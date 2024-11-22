@@ -123,7 +123,7 @@ uint8_t CyclicData[64] = {
                              //            this[0x10a2] = (TKOSTALComm)0x1;
                              //          }
                              //
-    0x00,                    // Unknown,
+    0x00,                    // Unknown, Byte 61
     0x00,                    // CRC, Byte 62
     0x00};
 
@@ -147,8 +147,8 @@ bool register_content_ok = false;
 void float2frame(byte* arr, float value, byte framepointer) {
   f32b g;
   g.f = value;
-  arr[framepointer] = 0; // g.b[0];
-  arr[framepointer + 1] = 0; // g.b[1];
+  arr[framepointer] = g.b[0];
+  arr[framepointer + 1] = g.b[1];
   arr[framepointer + 2] = g.b[2];
   arr[framepointer + 3] = g.b[3];
 }
@@ -252,7 +252,7 @@ void update_RS485_registers_inverter() {
   nominal_voltage_dV =
       (((datalayer.battery.info.max_design_voltage_dV - datalayer.battery.info.min_design_voltage_dV) / 2) +
        datalayer.battery.info.min_design_voltage_dV);
-  float2frame(BATTERY_INFO, (float)375.0f, 8);
+  float2frame(BATTERY_INFO, (float)375.0f, 6);
 
   float2frame(CyclicData, (float)423.0f, 10); // max voltage
 
