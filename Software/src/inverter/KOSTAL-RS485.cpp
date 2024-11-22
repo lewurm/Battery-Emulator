@@ -147,8 +147,8 @@ bool register_content_ok = false;
 void float2frame(byte* arr, float value, byte framepointer) {
   f32b g;
   g.f = value;
-  arr[framepointer] = g.b[0];
-  arr[framepointer + 1] = g.b[1];
+  arr[framepointer] = 0; // g.b[0];
+  arr[framepointer + 1] = 0; // g.b[1];
   arr[framepointer + 2] = g.b[2];
   arr[framepointer + 3] = g.b[3];
 }
@@ -282,8 +282,7 @@ void update_RS485_registers_inverter() {
   }
 
   // On startup, byte 59 seems to be always 0x02 couple of frames
-  if (f2_startup_count < 14) {
-    CyclicData[57] |= 1;   // magic
+  if (f2_startup_count < 29) {
     CyclicData[59] = 0x02; // magic
   } else {
     CyclicData[59] = 0x00; // delete magic
@@ -293,7 +292,7 @@ void update_RS485_registers_inverter() {
   float2frame(CyclicData, (float)16.2f, 42); // cell temp min
 
   float2frame(CyclicData, (float)3.258f, 46); // cell voltage max
-  float2frame(CyclicData, (float)3.240f, 50); // cell voltage min
+  float2frame(CyclicData, (float)3.250f, 50); // cell voltage min
 
   CyclicData[58] = (byte)(datalayer.battery.status.reported_soc / 100);  // Confirmed OK mapping
 
@@ -390,8 +389,13 @@ void receive_RS485()  // Runs as fast as possible to handle the serial stream
                   //Send cyclic data
                   update_values_battery();
                   update_RS485_registers_inverter();
-                  if (f2_startup_count < 15) {
+                  if (f2_startup_count < 30) {
                     f2_startup_count++;
+#ifdef DEBUG_KOSTAL_RS485_DATA
+                    Serial.print("f2 startup count: ");
+                    Serial.print(f2_startup_count);
+                    Serial.println();
+#endif
                   }
                   byte tmpframe[64];  //copy values to prevent data manipulation during rewrite/crc calculation
                   memcpy(tmpframe, CyclicData, 64);
