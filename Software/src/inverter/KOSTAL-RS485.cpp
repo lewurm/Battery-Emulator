@@ -104,7 +104,7 @@ uint8_t CyclicData[64] = {
                              //
                              //    remaining bits should never be set? Does not match with observations...?
                              //
-    0x64,                    // SOC , Byte 58
+    0x64,                    // SOC, Byte 58
                              //
     0x00,                    // Unknown,  Byte 59, startup magic?  Can be 2 or 0.  maybe contactors?
                              //        ```
@@ -274,14 +274,16 @@ void update_RS485_registers_inverter() {
   // When SOC = 100%, drop down allowed charge current down.
 
   if ((datalayer.battery.status.reported_soc / 100) < 100) {
+    CyclicData[57] = 0; // clear it
     float2frame(CyclicData, 13.0f, 34); // max charge current
   } else {
-    Serial.println("should not reach, max charge current");
-    float2frame(CyclicData, 4.0, 34);
+    CyclicData[57] = 0x40; // cell overvoltage, aka. full
+    float2frame(CyclicData, 0.0, 34);
   }
 
   // On startup, byte 59 seems to be always 0x02 couple of frames
   if (f2_startup_count < 14) {
+    CyclicData[57] |= 1;   // magic
     CyclicData[59] = 0x02; // magic
   } else {
     CyclicData[59] = 0x00; // delete magic
@@ -397,7 +399,7 @@ void receive_RS485()  // Runs as fast as possible to handle the serial stream
                   scramble_null_bytes(tmpframe,65);
                   send_kostal(tmpframe, 64);
                 }
-                if (code == 0x84a) {
+                else if (code == 0x84a) {
                   //Send  battery info
                   byte tmpframe[40];  //copy values to prevent data manipulation during rewrite/crc calculation
                   memcpy(tmpframe, BATTERY_INFO, 40);
@@ -408,13 +410,53 @@ void receive_RS485()  // Runs as fast as possible to handle the serial stream
                     startupMillis = currentMillis;
                   }
                 }
-                if (code == 0x353) {
+                else if (code == 0x353) {
                   //Send  battery error
                   send_kostal(frame3, 9);
                 }
+                else {
+#ifdef DEBUG_KOSTAL_RS485_DATA
+                  Serial.print("RX cmd1: ");
+                  for (uint8_t i = 0; i < 10; i++) {
+                      Serial.print(RS485_RXFRAME[i], HEX);
+                      Serial.print(" ");
+                  }
+                  Serial.println("");
+#endif
+                }
               }
             }
+            else {
+#ifdef DEBUG_KOSTAL_RS485_DATA
+              Serial.print("RX cmd2: ");
+              for (uint8_t i = 0; i < 10; i++) {
+                  Serial.print(RS485_RXFRAME[i], HEX);
+                  Serial.print(" ");
+              }
+              Serial.println("");
+#endif
+            }
           }
+          else {
+#ifdef DEBUG_KOSTAL_RS485_DATA
+            Serial.print("RX failed crc: ");
+            for (uint8_t i = 0; i < 10; i++) {
+              Serial.print(RS485_RXFRAME[i], HEX);
+              Serial.print(" ");
+            }
+            Serial.println("");
+#endif
+         }
+        }
+        else {
+#ifdef DEBUG_KOSTAL_RS485_DATA
+          Serial.print("RX unknown hdr: ");
+          for (uint8_t i = 0; i < 10; i++) {
+            Serial.print(RS485_RXFRAME[i], HEX);
+            Serial.print(" ");
+          }
+          Serial.println("");
+#endif
         }
         rx_index = 0;
       }
