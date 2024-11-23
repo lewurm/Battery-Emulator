@@ -14,10 +14,15 @@ static uint16_t discharge_current_dA = 0;
 static uint16_t charge_current_dA = 0;
 static int16_t average_temperature_dC = 0;
 static uint8_t incoming_message_counter = RS485_HEALTHY;
-static int32_t request_count = 0;
-static int32_t request2_count = 0;
-static int32_t voltage_stable_count = 0;
-static int8_t state = 0;
+
+static int32_t closing_done_count = 0;
+
+#define STATE0_STANDBY 0
+#define STATE1_CLOSE_CONTACTORS 1
+#define STATE2_CLOSING_DONE 2
+#define STATE3_OPERATE 3
+
+static int8_t state = STATE0_STANDBY;
 
 static unsigned long currentMillis;
 static unsigned long startupMillis = 0;
@@ -29,6 +34,24 @@ union f32b {
   float f;
   byte b[4];
 };
+
+static set_state(int next_state) {
+    Serial.print("SWITCH STATE: before=");
+    Serial.print(state);
+    Serial.print(", next -> ");
+    Serial.print(next_state);
+
+    if ((state == 0 && next_state == 1) || (state == 1 && next_state == 2) || (state == 2 && next_state == 3)) {
+        /* all good */
+    } else if (state == 3 && next_state == 0) {
+        Serial.println(" -> state reset");
+    } else {
+        Serial.println(" -> state WARNING");
+    }
+
+    state = next_state;
+}
+
 
 uint8_t BATTERY_INFO[40] = {0x00, 0xE2, 0xFF, 0x02, 0xFF, 0x29,  // Frame header
                       0x00, 0x00, 0x80, 0x43,  // 256.063 Nominal voltage / 5*51.2=256      first byte 0x01 or 0x04
@@ -91,7 +114,7 @@ uint8_t CyclicData[64] = {
     0x39, 0x05,              // Cycle count (uint16), Bytes 54-55
                              //
                              //
-    0x00,                    // Byte 56. If set to 1, alarm state?   There is a relationship between Byte 56 and Byte 57.
+    0x00,                    // Byte 56. Maps 1:1 to ModBus 208 "Battery ready flag"
                              //
     0x00,                    // When SOC=100 Byte57 (=0x39), > at startup 0x03 (about 7 times), otherwise 0x02
                              //                               ^^^^ actually I think those have been confused with 0x00 in the past
@@ -250,12 +273,19 @@ void update_RS485_registers_inverter() {
 
   float2frame(CyclicData, (float)17.1f, 14); // temperature
 
-  //  Some current values causes communication error, must be resolved, why.
-  float2frame(CyclicData, (float)datalayer.battery.status.current_dA / 10, 18);  // Peak discharge? current (float)
-  float2frame(CyclicData, (float)datalayer.battery.status.current_dA / 10, 22);  // avg current (float)
+  if (state == STATE3_OPERATE) {
+    float2frame(CyclicData, (float)datalayer.battery.status.current_dA / 10, 18);  // Peak discharge? current (float)
+    float2frame(CyclicData, (float)datalayer.battery.status.current_dA / 10, 22);  // avg current (float)
+  } else  {
+    float2frame(CyclicData, (float)0.0f, 18);  // Peak discharge? current (float)
+    float2frame(CyclicData, (float)0.0f, 22);  // avg current (float)
+  }
 
-#if 1
-  float2frame(CyclicData, (float)13.0f, 26);  // max discharge current (float)
+  if (state == STATE2_CLOSING_DONE || state == STATE3_OPERATE) {
+    float2frame(CyclicData, (float)13.0f, 26);  // max discharge current (float)
+  } else {
+    float2frame(CyclicData, (float)0.0f, 26);  // max discharge current (float)
+  }
 #endif
 
 # if 1
@@ -265,12 +295,12 @@ void update_RS485_registers_inverter() {
   // float2frame(CyclicData, (float)25.0f, 30); // battery Ah
 #endif
 
-  // When SOC = 100%, drop down allowed charge current down.
-  if (state >= 4) {
+  CyclicData[57] = 0; // clear it
+  if (state == STATE2_CLOSING_DONE || state == STATE3_OPERATE) {
       if ((datalayer.battery.status.reported_soc / 100) < 100) {
-        CyclicData[57] = 0; // clear it
         float2frame(CyclicData, 13.0f, 34); // max charge current
       } else {
+        // When SOC = 100%, drop down allowed charge current down.
         CyclicData[57] = 0x40; // cell overvoltage, aka. full
         float2frame(CyclicData, 0.0, 34);
       }
@@ -278,40 +308,44 @@ void update_RS485_registers_inverter() {
     float2frame(CyclicData, 0.0, 34);
   }
 
-  if (state == 0 || state == 1) {
-    float2frame(CyclicData, 0.0f, 6);
-  } else if (state == 2) {
-    float2frame(CyclicData, 50.0f, 6);
-  } else {
+  /* current voltage */
+  if (state == STATE2_CLOSING_DONE || state == STATE3_OPERATE) {
     float2frame(CyclicData, (float)datalayer.battery.status.voltage_dV / 10, 6); // Confirmed OK mapping
+  } else {
+    float2frame(CyclicData, 0.0f, 6);
   }
 
-  if (state < 3) {
+  if (state == STATE2_CLOSING_DONE || state == STATE3_OPERATE) {
+    CyclicData[56] = 0x01;  // Battery ready!  Contactors closed (?)
+  } else {
     CyclicData[56] = 0x00;
-  } else {
-    // set starting with state3
-    CyclicData[56] = 0x01;
   }
 
-  if (state < 4) {
-    CyclicData[59] = 0x02;
-  } else {
+  if (state == STATE3_OPERATE) {
     CyclicData[59] = 0x00;
+  } else {
+    CyclicData[59] = 0x02;
   }
 
-  if (state <= 1 || state == 3) {
-    CyclicData[61] = 0x02;
+  if (state == STATE0_STANDBY) {
+    CyclicData[61] = 0x01; // Waiting for inverter to send `07 E3 FF 02 FF 29 F4 00`
   } else {
     CyclicData[61] = 0x00;
   }
 
-#if 1
-  float2frame(CyclicData, (float)17.0f, 38); // cell temp max
-  float2frame(CyclicData, (float)16.2f, 42); // cell temp min
+  if (state == STATE2_CLOSING_DONE || state == STATE3_OPERATE) {
+    float2frame(CyclicData, (float)17.0f, 38); // cell temp max
+    float2frame(CyclicData, (float)16.2f, 42); // cell temp min
 
-  float2frame(CyclicData, (float)3.258f, 46); // cell voltage max
-  float2frame(CyclicData, (float)3.250f, 50); // cell voltage min
-#endif
+    float2frame(CyclicData, (float)3.258f, 46); // cell voltage max
+    float2frame(CyclicData, (float)3.250f, 50); // cell voltage min
+  } else {
+    float2frame(CyclicData, (float)0.0f, 38); // cell temp max
+    float2frame(CyclicData, (float)0.0f, 42); // cell temp min
+
+    float2frame(CyclicData, (float)0.0f, 46); // cell voltage max
+    float2frame(CyclicData, (float)0.0f, 50); // cell voltage min
+  }
 
   CyclicData[58] = (byte)(datalayer.battery.status.reported_soc / 100);  // Confirmed OK mapping
 
@@ -324,6 +358,7 @@ void update_RS485_registers_inverter() {
 
   if (incoming_message_counter == 0) {
     set_event(EVENT_MODBUS_INVERTER_MISSING, 0);
+    set_state(STATE0_STANDBY);
   } else {
     clear_event(EVENT_MODBUS_INVERTER_MISSING);
   }
@@ -353,6 +388,19 @@ void receive_RS485()  // Runs as fast as possible to handle the serial stream
                datalayer.system.status.inverter_allows_contactor_closing == false) {
       datalayer.system.status.inverter_allows_contactor_closing = true;
     }
+  }
+
+  if (Serial.available()) {
+    /* manually signal that the contactors have been closed */
+    if (state == STATE1_CLOSE_CONTACTORS) {
+      if (Serial.read() == 'd') {
+        set_state(STATE2_CLOSING_DONE);
+      }
+    }
+    // TODO: remove me, just testing
+    Serial.println("Got something from console!");
+    Serial.print(Serial.read());
+    Serial.println();
   }
 
   if (Serial2.available()) {
@@ -388,13 +436,7 @@ void receive_RS485()  // Runs as fast as possible to handle the serial stream
                 else if (RS485_RXFRAME[7] == 0x02) {
                   // request to apply voltage?
                   Serial.println("let's CLOSE THE CONTACTORS");
-                  if (state != 0) {
-                    Serial.print("voltage request state wtf:");
-                    Serial.print(state);
-                    Serial.println();
-                  }
-                  state = 1;
-                  Serial.println("state -> 1");
+                  set_state(STATE1_CLOSE_CONTACTORS);
                   send_kostal(frame4, 8); // ACK
                 }
                 else if (RS485_RXFRAME[7] == 0x04) {
@@ -412,23 +454,11 @@ void receive_RS485()  // Runs as fast as possible to handle the serial stream
               else {
                 int code=RS485_RXFRAME[6] + RS485_RXFRAME[7]*0x100;
                 if (code == 0x44a) {
-                  if (state == 1) {
-                      request_count++;
-                      if (request_count >= 6) {
-                          state = 2;
-                          Serial.println("state -> 2");
-                      }
-                  } else if (state == 2) {
-                      request2_count++;
-                      if (request_count >= 1) {
-                          state = 3;
-                          Serial.println("state -> 3");
-                      }
-                  } else if (state == 3) {
-                      voltage_stable_count++;
-                      if (voltage_stable_count >= 8) {
-                          state = 4;
-                          Serial.println("state -> 4");
+                  if (state == STATE2_CLOSING_DONE) {
+                      closing_done_count++;
+                      if (closing_done_count >= 5) {
+                          set_state(STATE3_OPERATE);
+                          closing_done_count = 0;
                       }
                   }
                   //Send cyclic data
