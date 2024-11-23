@@ -14,10 +14,11 @@ static uint16_t discharge_current_dA = 0;
 static uint16_t charge_current_dA = 0;
 static int16_t average_temperature_dC = 0;
 static uint8_t incoming_message_counter = RS485_HEALTHY;
-static int8_t f2_startup_count = 0;
+static int32_t request_count = 0;
+static int32_t request2_count = 0;
+static int32_t voltage_stable_count = 0;
+static int8_t state = 0;
 
-static boolean B1_delay = false;
-static unsigned long B1_last_millis = 0;
 static unsigned long currentMillis;
 static unsigned long startupMillis = 0;
 static unsigned long contactorMillis = 0;
@@ -265,27 +266,44 @@ void update_RS485_registers_inverter() {
 #endif
 
   // When SOC = 100%, drop down allowed charge current down.
-  if ((datalayer.battery.status.reported_soc / 100) < 100) {
-    CyclicData[57] = 0; // clear it
-    float2frame(CyclicData, 13.0f, 34); // max charge current
+  if (state >= 4) {
+      if ((datalayer.battery.status.reported_soc / 100) < 100) {
+        CyclicData[57] = 0; // clear it
+        float2frame(CyclicData, 13.0f, 34); // max charge current
+      } else {
+        CyclicData[57] = 0x40; // cell overvoltage, aka. full
+        float2frame(CyclicData, 0.0, 34);
+      }
   } else {
-    CyclicData[57] = 0x40; // cell overvoltage, aka. full
     float2frame(CyclicData, 0.0, 34);
   }
 
-  float2frame(CyclicData, (float)datalayer.battery.status.voltage_dV / 10, 6); // Confirmed OK mapping
-  CyclicData[56] = 0;
-  CyclicData[59] = 0x00; // delete magic
-#if 1
-  // On startup, byte 59 seems to be always 0x02 couple of frames
-  if (f2_startup_count < 100) {
-    /* during startup of the WR the voltage must be 0V, see also https://www.photovoltaikforum.com/thread/153574-plenticore-plus-mit-b-box-hvs-batteriefehler-nach-update/?postID=2230490#post2230490
-     */
-    float2frame(CyclicData, (float)0.0f, 6); /* status voltage */
-    CyclicData[56] = 1; /* makes the modbus register 208 'Battery ready flag' go to 1.0, required? */
-    CyclicData[59] = 0x02; // magic
+  if (state == 0 || state == 1) {
+    float2frame(CyclicData, 0.0f, 6);
+  } else if (state == 2) {
+    float2frame(CyclicData, 50.0f, 6);
+  } else {
+    float2frame(CyclicData, (float)datalayer.battery.status.voltage_dV / 10, 6); // Confirmed OK mapping
   }
-#endif
+
+  if (state < 3) {
+    CyclicData[56] = 0x00;
+  } else {
+    // set starting with state3
+    CyclicData[56] = 0x01;
+  }
+
+  if (state < 4) {
+    CyclicData[59] = 0x02;
+  } else {
+    CyclicData[59] = 0x00;
+  }
+
+  if (state <= 1 || state == 3) {
+    CyclicData[61] = 0x02;
+  } else {
+    CyclicData[61] = 0x00;
+  }
 
 #if 1
   float2frame(CyclicData, (float)17.0f, 38); // cell temp max
@@ -337,12 +355,7 @@ void receive_RS485()  // Runs as fast as possible to handle the serial stream
     }
   }
 
-  if (B1_delay) {
-    if ((currentMillis - B1_last_millis) > INTERVAL_1_S) {
-      send_kostal(frame4, 8);
-      B1_delay = false;
-    }
-  } else if (Serial2.available()) {
+  if (Serial2.available()) {
     RS485_RXFRAME[rx_index] = Serial2.read();
     if (RX_allow) {
       rx_index++;
@@ -374,8 +387,14 @@ void receive_RS485()  // Runs as fast as possible to handle the serial stream
                 }
                 else if (RS485_RXFRAME[7] == 0x02) {
                   // request to apply voltage?
-                  f2_startup_count = 100;
-                  Serial.println("let's close the contactors");
+                  Serial.println("let's CLOSE THE CONTACTORS");
+                  if (state != 0) {
+                    Serial.print("voltage request state wtf:");
+                    Serial.print(state);
+                    Serial.println();
+                  }
+                  state = 1;
+                  Serial.println("state -> 1");
                   send_kostal(frame4, 8); // ACK
                 }
                 else if (RS485_RXFRAME[7] == 0x04) {
@@ -393,17 +412,29 @@ void receive_RS485()  // Runs as fast as possible to handle the serial stream
               else {
                 int code=RS485_RXFRAME[6] + RS485_RXFRAME[7]*0x100;
                 if (code == 0x44a) {
+                  if (state == 1) {
+                      request_count++;
+                      if (request_count >= 6) {
+                          state = 2;
+                          Serial.println("state -> 2");
+                      }
+                  } else if (state == 2) {
+                      request2_count++;
+                      if (request_count >= 1) {
+                          state = 3;
+                          Serial.println("state -> 3");
+                      }
+                  } else if (state == 3) {
+                      voltage_stable_count++;
+                      if (voltage_stable_count >= 8) {
+                          state = 4;
+                          Serial.println("state -> 4");
+                      }
+                  }
                   //Send cyclic data
                   update_values_battery();
                   update_RS485_registers_inverter();
-                  if (f2_startup_count < 100) {
-                    f2_startup_count++;
-#ifdef DEBUG_KOSTAL_RS485_DATA
-                    Serial.print("f2 startup count: ");
-                    Serial.print(f2_startup_count);
-                    Serial.println();
-#endif
-                  }
+
                   byte tmpframe[64];  //copy values to prevent data manipulation during rewrite/crc calculation
                   memcpy(tmpframe, CyclicData, 64);
                   tmpframe[62] = calculate_kostal_crc(tmpframe, 62);
