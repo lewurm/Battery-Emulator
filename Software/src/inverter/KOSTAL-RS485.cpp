@@ -189,14 +189,6 @@ byte calculate_kostal_crc(byte *lfc, int len) {
   return (byte) (-sum & 0xff);
 }
 
-byte calculate_frame1_crc(byte* lfc, int lastbyte) {
-  unsigned int sum = 0;
-  for (int i = 0; i < lastbyte; ++i) {
-    sum += lfc[i];
-  }
-  return ((byte) ~(sum - 0x28) & 0xff);
-}
-
 bool check_kostal_frame_crc() {
   unsigned int sum = 0;
   for (int i = 1; i < 8; ++i) {
@@ -366,13 +358,13 @@ void receive_RS485()  // Runs as fast as possible to handle the serial stream
           Serial.println("");
 #endif
           rx_index = 0;
-          if (check_kostal_frame_crc()) {
+          if (RS485_RXFRAME[0] == 0x07 || check_kostal_frame_crc()) {
             incoming_message_counter = RS485_HEALTHY;
 
             if (RS485_RXFRAME[1] == 'c') {
               if (RS485_RXFRAME[6] == 0x47) {
-              // Set time function - Do nothing.
-              send_kostal(frame4, 8); // ACK
+                // Set time function - Do nothing.
+                send_kostal(frame4, 8); // ACK
               }
               if (RS485_RXFRAME[6] == 0x5E) {
                 // Set State function
@@ -384,7 +376,7 @@ void receive_RS485()  // Runs as fast as possible to handle the serial stream
                   // request to apply voltage?
                   f2_startup_count = 100;
                   Serial.println("let's close the contactors");
-                  // do not ack!
+                  send_kostal(frame4, 8); // ACK
                 }
                 else if (RS485_RXFRAME[7] == 0x04) {
                   // INVALID
