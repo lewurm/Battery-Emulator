@@ -38,10 +38,10 @@ union f32b {
 static void set_state(int next_state) {
     Serial.print("SWITCH STATE: before=");
     Serial.print(state);
-    Serial.print(", next -> ");
+    Serial.print(", next=");
     Serial.print(next_state);
 
-    if ((state == 0 && next_state == 1) || (state == 1 && next_state == 2) || (state == 2 && next_state == 3)) {
+    if ((state == 0 && next_state == 0) || (state == 0 && next_state == 1) || (state == 1 && next_state == 2) || (state == 2 && next_state == 3)) {
         /* all good */
     } else if (state == 3 && next_state == 0) {
         Serial.println(" -> state reset");
@@ -286,7 +286,6 @@ void update_RS485_registers_inverter() {
   } else {
     float2frame(CyclicData, (float)0.0f, 26);  // max discharge current (float)
   }
-#endif
 
 # if 1
   float2frame(CyclicData, (float)164.3f, 30); // battery Ah
@@ -393,14 +392,10 @@ void receive_RS485()  // Runs as fast as possible to handle the serial stream
   if (Serial.available()) {
     /* manually signal that the contactors have been closed */
     if (state == STATE1_CLOSE_CONTACTORS) {
-      if (Serial.read() == 'd') {
+      if (Serial.read() == 10) {
         set_state(STATE2_CLOSING_DONE);
       }
     }
-    // TODO: remove me, just testing
-    Serial.println("Got something from console!");
-    Serial.print(Serial.read());
-    Serial.println();
   }
 
   if (Serial2.available()) {
