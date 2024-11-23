@@ -244,7 +244,6 @@ void update_RS485_registers_inverter() {
   }
 
   // if (datalayer.system.status.battery_allows_contactor_closing & datalayer.system.status.inverter_allows_contactor_closing ) {
-    float2frame(CyclicData, (float)datalayer.battery.status.voltage_dV / 10, 6); // Confirmed OK mapping
   // } else {
   //   float2frame(CyclicData, 0.0, 6);
   // }
@@ -273,8 +272,6 @@ void update_RS485_registers_inverter() {
   // float2frame(CyclicData, (float)25.0f, 30); // battery Ah
 #endif
 
-  CyclicData[56] = 1; /* why always set?  makes the modbus register 208 'Battery ready flag' go to 1.0, required? */
-
   // When SOC = 100%, drop down allowed charge current down.
   if ((datalayer.battery.status.reported_soc / 100) < 100) {
     CyclicData[57] = 0; // clear it
@@ -284,12 +281,17 @@ void update_RS485_registers_inverter() {
     float2frame(CyclicData, 0.0, 34);
   }
 
-  // On startup, byte 59 seems to be always 0x02 couple of frames
+  float2frame(CyclicData, (float)datalayer.battery.status.voltage_dV / 10, 6); // Confirmed OK mapping
+  CyclicData[56] = 0;
+  CyclicData[59] = 0x00; // delete magic
 #if 1
-  if (f2_startup_count < 15) {
+  // On startup, byte 59 seems to be always 0x02 couple of frames
+  if (f2_startup_count < 100) {
+    /* during startup of the WR the voltage must be 0V, see also https://www.photovoltaikforum.com/thread/153574-plenticore-plus-mit-b-box-hvs-batteriefehler-nach-update/?postID=2230490#post2230490
+     */
+    float2frame(CyclicData, (float)0.0f, 6); /* status voltage */
+    CyclicData[56] = 1; /* makes the modbus register 208 'Battery ready flag' go to 1.0, required? */
     CyclicData[59] = 0x02; // magic
-  } else {
-    CyclicData[59] = 0x00; // delete magic
   }
 #endif
 
@@ -354,7 +356,7 @@ void receive_RS485()  // Runs as fast as possible to handle the serial stream
       rx_index++;
       if (RS485_RXFRAME[rx_index - 1] == 0x00) {
         // TODO: check that receiving header matches with sending header
-        if ((rx_index == 10) && (RS485_RXFRAME[0] == 0x09) && register_content_ok) {
+        if (rx_index == 10 && (RS485_RXFRAME[0] == 0x09 || RS485_RXFRAME[0] == 0x07) && register_content_ok) {
 #ifdef DEBUG_KOSTAL_RS485_DATA
           Serial.print("RX: ");
           for (uint8_t i = 0; i < 10; i++) {
@@ -376,14 +378,20 @@ void receive_RS485()  // Runs as fast as possible to handle the serial stream
                 // Set State function
                 if (RS485_RXFRAME[7] == 0x01) {
                   // State X
+                  send_kostal(frame4, 8); // ACK
+                }
+                else if (RS485_RXFRAME[7] == 0x02) {
+                  // request to apply voltage?
+                  f2_startup_count = 100;
+                  Serial.println("let's close the contactors");
+                  // do not ack!
                 }
                 else if (RS485_RXFRAME[7] == 0x04) {
                   // INVALID
+                  send_kostal(frame4, 8); // ACK
+                } else {
+                  send_kostal(frame4, 8); // ACK
                 }
-                else {
-                  // State Y
-                }
-                send_kostal(frame4, 8); // ACK
               }
             }
             else if (RS485_RXFRAME[1] == 'b') {
@@ -396,7 +404,7 @@ void receive_RS485()  // Runs as fast as possible to handle the serial stream
                   //Send cyclic data
                   update_values_battery();
                   update_RS485_registers_inverter();
-                  if (f2_startup_count < 30) {
+                  if (f2_startup_count < 100) {
                     f2_startup_count++;
 #ifdef DEBUG_KOSTAL_RS485_DATA
                     Serial.print("f2 startup count: ");
