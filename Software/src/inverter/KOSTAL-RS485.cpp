@@ -35,7 +35,7 @@ union f32b {
   byte b[4];
 };
 
-static set_state(int next_state) {
+static void set_state(int next_state) {
     Serial.print("SWITCH STATE: before=");
     Serial.print(state);
     Serial.print(", next -> ");
