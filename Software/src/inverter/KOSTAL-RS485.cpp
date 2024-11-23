@@ -252,9 +252,9 @@ void update_RS485_registers_inverter() {
   nominal_voltage_dV =
       (((datalayer.battery.info.max_design_voltage_dV - datalayer.battery.info.min_design_voltage_dV) / 2) +
        datalayer.battery.info.min_design_voltage_dV);
-  float2frame(BATTERY_INFO, (float)375.0f, 6);
+  float2frame(BATTERY_INFO, (float)370.0f, 6);
 
-  float2frame(CyclicData, (float)423.0f, 10); // max voltage
+  float2frame(CyclicData, (float)410.0f, 10); // max voltage
 
   float2frame(CyclicData, (float)17.1f, 14); // temperature
 
@@ -262,18 +262,18 @@ void update_RS485_registers_inverter() {
   float2frame(CyclicData, (float)datalayer.battery.status.current_dA / 10, 18);  // Peak discharge? current (float)
   float2frame(CyclicData, (float)datalayer.battery.status.current_dA / 10, 22);  // avg current (float)
 
-#if 0
+#if 1
   float2frame(CyclicData, (float)13.0f, 26);  // max discharge current (float)
 #endif
 
-# if 0
+# if 1
   float2frame(CyclicData, (float)164.3f, 30); // battery Ah
 #else
   /* from BYD trace... maybe too large batteries are rejected? */
   // float2frame(CyclicData, (float)25.0f, 30); // battery Ah
 #endif
 
-  CyclicData[56] = 1; /* why always set?  makes the modbus register 208 'Battery ready flag' go to 1.0*/
+  CyclicData[56] = 1; /* why always set?  makes the modbus register 208 'Battery ready flag' go to 1.0, required? */
 
   // When SOC = 100%, drop down allowed charge current down.
   if ((datalayer.battery.status.reported_soc / 100) < 100) {
@@ -286,14 +286,14 @@ void update_RS485_registers_inverter() {
 
   // On startup, byte 59 seems to be always 0x02 couple of frames
 #if 1
-  if (f2_startup_count < 29) {
+  if (f2_startup_count < 15) {
     CyclicData[59] = 0x02; // magic
   } else {
     CyclicData[59] = 0x00; // delete magic
   }
 #endif
 
-#if 0
+#if 1
   float2frame(CyclicData, (float)17.0f, 38); // cell temp max
   float2frame(CyclicData, (float)16.2f, 42); // cell temp min
 
