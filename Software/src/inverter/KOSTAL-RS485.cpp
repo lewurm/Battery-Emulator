@@ -56,6 +56,18 @@ static void set_state(int next_state) {
     }
 }
 
+static void print_state(void) {
+    if (state == STATE0_STANDBY) {
+        Serial.println("  >> STATE0_STANDBY <<");
+    } else if (state == STATE1_CLOSE_CONTACTORS) {
+        Serial.println("  >> STATE1_CLOSE_CONTACTORS <<");
+    } else if (state == STATE2_CLOSING_DONE) {
+        Serial.println("  >> STATE2_CLOSING_DONE <<");
+    } else if (state == STATE3_OPERATE) {
+        Serial.println("  >> STATE3_OPERATE <<");
+    }
+}
+
 
 uint8_t BATTERY_INFO[40] = {0x00, 0xE2, 0xFF, 0x02, 0xFF, 0x29,  // Frame header
                       0x00, 0x00, 0x80, 0x43,  // 256.063 Nominal voltage / 5*51.2=256      first byte 0x01 or 0x04
@@ -219,10 +231,12 @@ byte calculate_kostal_crc(byte *lfc, int len) {
 
 bool check_kostal_frame_crc() {
   unsigned int sum = 0;
-  for (int i = 1; i < 8; ++i) {
+  /* assumption: There is no \0 byte except the terminating one */
+  unsigned int len = RS485_RXFRAME[0] - 1;
+  for (int i = 1; i < len ; ++i) {
     sum += RS485_RXFRAME[i];
   }
-  if (((~sum + 1) & 0xff) == (RS485_RXFRAME[8] & 0xff)) {
+  if (((~sum + 1) & 0xff) == (RS485_RXFRAME[len] & 0xff)) {
     return (true);
   } else {
     return (false);
@@ -412,6 +426,7 @@ void receive_RS485()  // Runs as fast as possible to handle the serial stream
         // TODO: check that receiving header matches with sending header
         if (rx_index == 10 && (RS485_RXFRAME[0] == 0x09 || RS485_RXFRAME[0] == 0x07) && register_content_ok) {
 #ifdef DEBUG_KOSTAL_RS485_DATA
+          print_state();
           Serial.print("RX: ");
           for (uint8_t i = 0; i < 10; i++) {
             Serial.print(RS485_RXFRAME[i] < 0x10 ? "0" : "");
@@ -421,7 +436,7 @@ void receive_RS485()  // Runs as fast as possible to handle the serial stream
           Serial.println("");
 #endif
           rx_index = 0;
-          if (RS485_RXFRAME[0] == 0x07 || check_kostal_frame_crc()) {
+          if (check_kostal_frame_crc()) {
             incoming_message_counter = RS485_HEALTHY;
 
             if (RS485_RXFRAME[1] == 'c') {
