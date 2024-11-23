@@ -72,20 +72,20 @@ uint8_t BATTERY_INFO[40] = {0x00, 0xE2, 0xFF, 0x02, 0xFF, 0x29,  // Frame header
 uint8_t CyclicData[64] = {
     0x00,                          // First zero byte pointer
     0xE2, 0xFF, 0x02, 0xFF, 0x29,  // frame Header
-    0x1D, 0x5A, 0x85, 0x43,  // Current Voltage  (float)                        Modbus register 216, Bytes 6-9
+    0x1D, 0x1A, 0xB2, 0x43,  // Current Voltage  (float)                        Modbus register 216, Bytes 6-9
     0x00, 0x00, 0x8D, 0x43,  // Max Voltage      (float),                                     Bytes 10-13
     0x00, 0x00, 0xAC, 0x41,  // BAttery Temperature        (float)       Modbus register 214, Bytes 14-17
     0x00, 0x00, 0x00, 0x00,  // Peak Current (1s period?),  Bytes 18-21 - Communication fault seen with some values (>10A?)
     0x00, 0x00, 0x00, 0x00,  // Avg current  (1s period?),  Bytes 22-25  - Communication fault seen with some values (>10A?)
     0x00, 0x00, 0x48, 0x42,  // Max discharge current (float), Bytes 26-29,
                              // Sunspec: ADisChaMax
-    0x00, 0x00, 0xC8, 0x41,  // Battery gross capacity, Ah (2 byte float) , Bytes 30-33, Modbus 512
-    0x00, 0x00, 0xA0, 0x41,  // Max charge current (2 byte float) Bit 36-37, ZERO WHEN SOC=100
+    0x00, 0x00, 0x50, 0x41,  // Battery gross capacity, Ah (2 byte float) , Bytes 30-33, Modbus 512
+    0x00, 0x00, 0x50, 0x41,  // Max charge current (2 byte float) Bit 34-37, ZERO WHEN SOC=100
                              // Sunspec: AChaMax
-    0xCD, 0xCC, 0xB4, 0x41,  // MaxCellTemp (float), Bytes 38-41
-    0x00, 0x00, 0xA4, 0x41,  // MinCellTemp (float), Bytes 42-45
-    0xA4, 0x70, 0x55, 0x40,  // MaxCellVolt (float), Bytes 46-49
-    0x7D, 0x3F, 0x55, 0x40,  // MinCellVolt (float), Bytes 50-53
+    0x00, 0x00, 0xC0, 0x40,  // MaxCellTemp (float), Bytes 38-41
+    0x00, 0x00, 0xA0, 0x40,  // MinCellTemp (float), Bytes 42-45
+    0xdd, 0x24, 0x66, 0x40,  // MaxCellVolt (float), Bytes 46-49
+    0x01, 0x00, 0x60, 0x40,  // MinCellVolt (float), Bytes 50-53
 
     0x39, 0x05,              // Cycle count (uint16), Bytes 54-55
                              //
@@ -243,11 +243,11 @@ void update_RS485_registers_inverter() {
     average_temperature_dC = 0;
   }
 
-  if (datalayer.system.status.battery_allows_contactor_closing & datalayer.system.status.inverter_allows_contactor_closing ) {
+  // if (datalayer.system.status.battery_allows_contactor_closing & datalayer.system.status.inverter_allows_contactor_closing ) {
     float2frame(CyclicData, (float)datalayer.battery.status.voltage_dV / 10, 6); // Confirmed OK mapping
-  } else {
-    float2frame(CyclicData, 0.0, 6);
-  }
+  // } else {
+  //   float2frame(CyclicData, 0.0, 6);
+  // }
   // Set nominal voltage to value between min and max voltage set by battery (Example 400 and 300 results in 350V)
   nominal_voltage_dV =
       (((datalayer.battery.info.max_design_voltage_dV - datalayer.battery.info.min_design_voltage_dV) / 2) +
@@ -262,17 +262,20 @@ void update_RS485_registers_inverter() {
   float2frame(CyclicData, (float)datalayer.battery.status.current_dA / 10, 18);  // Peak discharge? current (float)
   float2frame(CyclicData, (float)datalayer.battery.status.current_dA / 10, 22);  // avg current (float)
 
+#if 0
   float2frame(CyclicData, (float)13.0f, 26);  // max discharge current (float)
+#endif
 
 # if 0
   float2frame(CyclicData, (float)164.3f, 30); // battery Ah
 #else
   /* from BYD trace... maybe too large batteries are rejected? */
-  float2frame(CyclicData, (float)25.0f, 30); // battery Ah
+  // float2frame(CyclicData, (float)25.0f, 30); // battery Ah
 #endif
 
-  // When SOC = 100%, drop down allowed charge current down.
+  CyclicData[56] = 1; /* why always set?  makes the modbus register 208 'Battery ready flag' go to 1.0*/
 
+  // When SOC = 100%, drop down allowed charge current down.
   if ((datalayer.battery.status.reported_soc / 100) < 100) {
     CyclicData[57] = 0; // clear it
     float2frame(CyclicData, 13.0f, 34); // max charge current
@@ -282,17 +285,21 @@ void update_RS485_registers_inverter() {
   }
 
   // On startup, byte 59 seems to be always 0x02 couple of frames
+#if 1
   if (f2_startup_count < 29) {
     CyclicData[59] = 0x02; // magic
   } else {
     CyclicData[59] = 0x00; // delete magic
   }
+#endif
 
+#if 0
   float2frame(CyclicData, (float)17.0f, 38); // cell temp max
   float2frame(CyclicData, (float)16.2f, 42); // cell temp min
 
   float2frame(CyclicData, (float)3.258f, 46); // cell voltage max
   float2frame(CyclicData, (float)3.250f, 50); // cell voltage min
+#endif
 
   CyclicData[58] = (byte)(datalayer.battery.status.reported_soc / 100);  // Confirmed OK mapping
 
