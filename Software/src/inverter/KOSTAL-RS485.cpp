@@ -36,20 +36,24 @@ union f32b {
 };
 
 static void set_state(int next_state) {
+    if (state == 0 && state == next_state) {
+        return;
+    }
     Serial.print("SWITCH STATE: before=");
     Serial.print(state);
     Serial.print(", next=");
     Serial.print(next_state);
+    Serial.println();
 
     if ((state == 0 && next_state == 0) || (state == 0 && next_state == 1) || (state == 1 && next_state == 2) || (state == 2 && next_state == 3)) {
         /* all good */
+        state = next_state;
     } else if (state == 3 && next_state == 0) {
-        Serial.println(" -> state reset");
+        state = next_state;
+        Serial.println("    -> state reset");
     } else {
-        Serial.println(" -> state WARNING");
+        Serial.println("    -> state transition IGNORED");
     }
-
-    state = next_state;
 }
 
 
@@ -395,6 +399,8 @@ void receive_RS485()  // Runs as fast as possible to handle the serial stream
       if (Serial.read() == 10) {
         set_state(STATE2_CLOSING_DONE);
       }
+    } else {
+        Serial.read(); /* eat it */
     }
   }
 
@@ -408,6 +414,7 @@ void receive_RS485()  // Runs as fast as possible to handle the serial stream
 #ifdef DEBUG_KOSTAL_RS485_DATA
           Serial.print("RX: ");
           for (uint8_t i = 0; i < 10; i++) {
+            Serial.print(RS485_RXFRAME[i] < 0x10 ? "0" : "");
             Serial.print(RS485_RXFRAME[i], HEX);
             Serial.print(" ");
           }
@@ -485,6 +492,7 @@ void receive_RS485()  // Runs as fast as possible to handle the serial stream
 #ifdef DEBUG_KOSTAL_RS485_DATA
                   Serial.print("RX cmd1: ");
                   for (uint8_t i = 0; i < 10; i++) {
+                      Serial.print(RS485_RXFRAME[i] < 0x10 ? "0" : "");
                       Serial.print(RS485_RXFRAME[i], HEX);
                       Serial.print(" ");
                   }
@@ -497,6 +505,7 @@ void receive_RS485()  // Runs as fast as possible to handle the serial stream
 #ifdef DEBUG_KOSTAL_RS485_DATA
               Serial.print("RX cmd2: ");
               for (uint8_t i = 0; i < 10; i++) {
+                  Serial.print(RS485_RXFRAME[i] < 0x10 ? "0" : "");
                   Serial.print(RS485_RXFRAME[i], HEX);
                   Serial.print(" ");
               }
@@ -508,6 +517,7 @@ void receive_RS485()  // Runs as fast as possible to handle the serial stream
 #ifdef DEBUG_KOSTAL_RS485_DATA
             Serial.print("RX failed crc: ");
             for (uint8_t i = 0; i < 10; i++) {
+              Serial.print(RS485_RXFRAME[i] < 0x10 ? "0" : "");
               Serial.print(RS485_RXFRAME[i], HEX);
               Serial.print(" ");
             }
@@ -519,6 +529,7 @@ void receive_RS485()  // Runs as fast as possible to handle the serial stream
 #ifdef DEBUG_KOSTAL_RS485_DATA
           Serial.print("RX unknown hdr: ");
           for (uint8_t i = 0; i < 10; i++) {
+            Serial.print(RS485_RXFRAME[i] < 0x10 ? "0" : "");
             Serial.print(RS485_RXFRAME[i], HEX);
             Serial.print(" ");
           }
