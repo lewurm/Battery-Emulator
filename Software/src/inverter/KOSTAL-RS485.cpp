@@ -188,7 +188,6 @@ uint8_t frame3[9] = {
 };
 
 uint8_t frame4[8]   = {0x07, 0xE3, 0xFF, 0x02, 0xFF, 0x29, 0xF4, 0x00};
-uint8_t frameB1[10] = {0x07, 0x63, 0xFF, 0x02, 0xFF, 0x29, 0x5E, 0x02, 0x16, 0x00};
 
 uint8_t RS485_RXFRAME[10];
 
@@ -239,11 +238,17 @@ byte calculate_kostal_crc(byte *lfc, int len) {
   return (byte) (-sum & 0xff);
 }
 
-bool check_kostal_frame_crc() {
+bool check_kostal_frame_crc(int len) {
   unsigned int sum = 0;
+
   /* assumption: There is no \0 byte except the terminating one */
-  unsigned int len = RS485_RXFRAME[0] - 1;
-  for (int i = 1; i < len ; ++i) {
+  if (RS485_RXFRAME[0] < len) {
+      /* except for one case, 07 63 FF 02 FF 29 5E 02 16 00 */
+      /* clear that byte at index 7*/
+      RS485_RXFRAME[RS485_RXFRAME[0]] = '\0';
+  }
+
+  for (int i = 1; i < len; ++i) {
     sum += RS485_RXFRAME[i];
   }
   if (((~sum + 1) & 0xff) == (RS485_RXFRAME[len] & 0xff)) {
@@ -319,7 +324,7 @@ void update_RS485_registers_inverter() {
     float2frame(CyclicData, (float)0.0f, 26);  // max discharge current (float)
   }
 
-# if 1
+# if 0
   float2frame(CyclicData, (float)164.3f, 30); // battery Ah
 #else
   /* from BYD trace... maybe too large batteries are rejected? */
@@ -468,9 +473,9 @@ void receive_RS485()  // Runs as fast as possible to handle the serial stream
           }
           Serial.println("");
 #endif
+          int len = rx_index;
           rx_index = 0;
-          // TODO: why does crc check fail for 0x07?
-          if (RS485_RXFRAME[0] == 0x07 || check_kostal_frame_crc()) {
+          if (check_kostal_frame_crc(len)) {
             incoming_message_counter = RS485_HEALTHY;
 
             if (RS485_RXFRAME[1] == 'c') {
@@ -484,7 +489,7 @@ void receive_RS485()  // Runs as fast as possible to handle the serial stream
                   // State X
                   send_kostal(frame4, 8); // ACK
                 }
-                else if (RS485_RXFRAME[7] == 0x02) {
+                else if (RS485_RXFRAME[7] == 0x00) {
                   // clearance to apply voltage
                   set_state(STATE2_READY_TO_CLOSE);
                   closing_done_count = 0;
