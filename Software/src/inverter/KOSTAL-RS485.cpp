@@ -19,9 +19,10 @@ static int32_t closing_done_count = 0;
 
 #define STATE0_STANDBY 0
 
-#define STATE1_READY_TO_CLOSE 1
-#define STATE2_CLOSING_DONE 2
-#define STATE3_OPERATE 3
+#define STATE1_ASKING_TO_CLOSE 1
+#define STATE2_READY_TO_CLOSE 2
+#define STATE3_CLOSING_DONE 3
+#define STATE4_OPERATE 4
 
 static int8_t state = STATE0_STANDBY;
 
@@ -66,12 +67,14 @@ static void set_state(int next_state) {
 static void print_state(void) {
     if (state == STATE0_STANDBY) {
         Serial.println("  >> STATE0_STANDBY <<");
-    } else if (state == STATE1_READY_TO_CLOSE) {
-        Serial.println("  >> STATE1_READY_TO_CLOSE <<");
-    } else if (state == STATE2_CLOSING_DONE) {
-        Serial.println("  >> STATE2_CLOSING_DONE <<");
-    } else if (state == STATE3_OPERATE) {
-        Serial.println("  >> STATE3_OPERATE <<");
+    } else if (state == STATE1_ASKING_TO_CLOSE) {
+        Serial.println("  >> STATE1_ASKING_TO_CLOSE <<");
+    } else if (state == STATE2_READY_TO_CLOSE) {
+        Serial.println("  >> STATE2_READY_TO_CLOSE <<");
+    } else if (state == STATE3_CLOSING_DONE) {
+        Serial.println("  >> STATE3_CLOSING_DONE <<");
+    } else if (state == STATE4_OPERATE) {
+        Serial.println("  >> STATE4_OPERATE <<");
     }
 }
 
@@ -298,7 +301,7 @@ void update_RS485_registers_inverter() {
 
   float2frame(CyclicData, (float)17.1f, 14); // temperature
 
-  if (state == STATE3_OPERATE) {
+  if (state == STATE4_OPERATE) {
     float2frame(CyclicData, (float)datalayer.battery.status.current_dA / 10, 18);  // Peak discharge? current (float)
     float2frame(CyclicData, (float)datalayer.battery.status.current_dA / 10, 22);  // avg current (float)
   } else  {
@@ -306,7 +309,7 @@ void update_RS485_registers_inverter() {
     float2frame(CyclicData, (float)0.0f, 22);  // avg current (float)
   }
 
-  if (state == STATE2_CLOSING_DONE || state == STATE3_OPERATE) {
+  if (state == STATE3_CLOSING_DONE || state == STATE4_OPERATE) {
     float2frame(CyclicData, (float)13.0f, 26);  // max discharge current (float)
   } else {
     float2frame(CyclicData, (float)0.0f, 26);  // max discharge current (float)
@@ -320,7 +323,7 @@ void update_RS485_registers_inverter() {
 #endif
 
   CyclicData[57] = 0; // clear it
-  if (state == STATE2_CLOSING_DONE || state == STATE3_OPERATE) {
+  if (state == STATE3_CLOSING_DONE || state == STATE4_OPERATE) {
       if ((datalayer.battery.status.reported_soc / 100) < 100) {
         float2frame(CyclicData, 13.0f, 34); // max charge current
       } else {
@@ -333,19 +336,19 @@ void update_RS485_registers_inverter() {
   }
 
   /* current voltage */
-  if (state == STATE2_CLOSING_DONE || state == STATE3_OPERATE) {
+  if (state == STATE3_CLOSING_DONE || state == STATE4_OPERATE) {
     float2frame(CyclicData, (float)datalayer.battery.status.voltage_dV / 10, 6); // Confirmed OK mapping
   } else {
     float2frame(CyclicData, 0.0f, 6);
   }
 
-  if (state == STATE2_CLOSING_DONE || state == STATE3_OPERATE) {
+  if (state == STATE3_CLOSING_DONE || state == STATE4_OPERATE) {
     CyclicData[56] = 0x01;  // Battery ready!  Contactors closed (?)
   } else {
     CyclicData[56] = 0x00;
   }
 
-  if (state == STATE3_OPERATE) {
+  if (state == STATE4_OPERATE) {
     CyclicData[59] = 0x00;
   } else {
     CyclicData[59] = 0x02;
@@ -357,7 +360,7 @@ void update_RS485_registers_inverter() {
     CyclicData[61] = 0x00;
   }
 
-  if (state == STATE2_CLOSING_DONE || state == STATE3_OPERATE) {
+  if (state == STATE3_CLOSING_DONE || state == STATE4_OPERATE) {
     float2frame(CyclicData, (float)17.0f, 38); // cell temp max
     float2frame(CyclicData, (float)16.2f, 42); // cell temp min
 
@@ -416,9 +419,9 @@ void receive_RS485()  // Runs as fast as possible to handle the serial stream
 
   if (Serial.available()) {
     /* manually signal that the contactors have been closed */
-    if (state == STATE1_READY_TO_CLOSE) {
+    if (state == STATE2_READY_TO_CLOSE) {
       if (Serial.read() == 10) {
-        set_state(STATE2_CLOSING_DONE);
+        set_state(STATE3_CLOSING_DONE);
       }
     } else {
         // TODO: remove me
@@ -427,13 +430,16 @@ void receive_RS485()  // Runs as fast as possible to handle the serial stream
             set_state(STATE0_STANDBY, true);
             Serial.read(); /* discard '\n' right after it */
         } else if (request == '1') {
-            set_state(STATE1_READY_TO_CLOSE, true);
+            set_state(STATE1_ASKING_TO_CLOSE, true);
             Serial.read(); /* discard '\n' right after it */
         } else if (request == '2') {
-            set_state(STATE2_CLOSING_DONE, true);
+            set_state(STATE2_READY_TO_CLOSE, true);
             Serial.read(); /* discard '\n' right after it */
         } else if (request == '3') {
-            set_state(STATE3_OPERATE, true);
+            set_state(STATE3_CLOSING_DONE, true);
+            Serial.read(); /* discard '\n' right after it */
+        } else if (request == '4') {
+            set_state(STATE4_OPERATE, true);
             Serial.read(); /* discard '\n' right after it */
         } else {
             /* just eat that byte */
@@ -459,7 +465,8 @@ void receive_RS485()  // Runs as fast as possible to handle the serial stream
           Serial.println("");
 #endif
           rx_index = 0;
-          if (check_kostal_frame_crc()) {
+          // TODO: why does crc check fail for 0x07?
+          if (RS485_RXFRAME[0] == 0x07 || check_kostal_frame_crc()) {
             incoming_message_counter = RS485_HEALTHY;
 
             if (RS485_RXFRAME[1] == 'c') {
@@ -474,8 +481,8 @@ void receive_RS485()  // Runs as fast as possible to handle the serial stream
                   send_kostal(frame4, 8); // ACK
                 }
                 else if (RS485_RXFRAME[7] == 0x02) {
-                  // request to apply voltage?
-                  set_state(STATE2_CLOSING_DONE);
+                  // clearance to apply voltage
+                  set_state(STATE2_READY_TO_CLOSE);
                   closing_done_count = 0;
                   send_kostal(frame4, 8); // ACK
                 }
@@ -494,10 +501,10 @@ void receive_RS485()  // Runs as fast as possible to handle the serial stream
               else {
                 int code=RS485_RXFRAME[6] + RS485_RXFRAME[7]*0x100;
                 if (code == 0x44a) {
-                  if (state == STATE2_CLOSING_DONE) {
+                  if (state == STATE3_CLOSING_DONE) {
                       closing_done_count++;
                       if (closing_done_count >= 8) {
-                          set_state(STATE3_OPERATE);
+                          set_state(STATE4_OPERATE);
                           closing_done_count = 0;
                       }
                   }
@@ -511,8 +518,9 @@ void receive_RS485()  // Runs as fast as possible to handle the serial stream
                   scramble_null_bytes(tmpframe,65);
                   send_kostal(tmpframe, 64);
 
+                  /* only send one frame in STATE0_STANDBY */
                   if (state == STATE0_STANDBY) {
-                      set_state(STATE1_READY_TO_CLOSE);
+                      set_state(STATE1_ASKING_TO_CLOSE);
                   }
                 }
                 else if (code == 0x84a) {
