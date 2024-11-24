@@ -18,7 +18,8 @@ static uint8_t incoming_message_counter = RS485_HEALTHY;
 static int32_t closing_done_count = 0;
 
 #define STATE0_STANDBY 0
-#define STATE1_CLOSE_CONTACTORS 1
+
+#define STATE1_READY_TO_CLOSE 1
 #define STATE2_CLOSING_DONE 2
 #define STATE3_OPERATE 3
 
@@ -35,7 +36,7 @@ union f32b {
   byte b[4];
 };
 
-static void set_state(int next_state) {
+static void set_state(int next_state, bool force) {
     if (state == 0 && state == next_state) {
         return;
     }
@@ -45,7 +46,10 @@ static void set_state(int next_state) {
     Serial.print(next_state);
     Serial.println();
 
-    if ((state == 0 && next_state == 0) || (state == 0 && next_state == 1) || (state == 1 && next_state == 2) || (state == 2 && next_state == 3)) {
+    if (force) {
+        Serial.println(" forced transition");
+        state = next_state;
+    } else if ((state == 0 && next_state == 0) || (state == 0 && next_state == 1) || (state == 1 && next_state == 2) || (state == 2 && next_state == 3)) {
         /* all good */
         state = next_state;
     } else if (state == 3 && next_state == 0) {
@@ -55,12 +59,15 @@ static void set_state(int next_state) {
         Serial.println("    -> state transition IGNORED");
     }
 }
+static void set_state(int next_state) {
+    set_state(next_state, false);
+}
 
 static void print_state(void) {
     if (state == STATE0_STANDBY) {
         Serial.println("  >> STATE0_STANDBY <<");
-    } else if (state == STATE1_CLOSE_CONTACTORS) {
-        Serial.println("  >> STATE1_CLOSE_CONTACTORS <<");
+    } else if (state == STATE1_READY_TO_CLOSE) {
+        Serial.println("  >> STATE1_READY_TO_CLOSE <<");
     } else if (state == STATE2_CLOSING_DONE) {
         Serial.println("  >> STATE2_CLOSING_DONE <<");
     } else if (state == STATE3_OPERATE) {
@@ -345,7 +352,7 @@ void update_RS485_registers_inverter() {
   }
 
   if (state == STATE0_STANDBY) {
-    CyclicData[61] = 0x01; // Waiting for inverter to send `07 E3 FF 02 FF 29 F4 00`
+    CyclicData[61] = 0x01; // only set on first message with inverter
   } else {
     CyclicData[61] = 0x00;
   }
@@ -375,7 +382,7 @@ void update_RS485_registers_inverter() {
 
   if (incoming_message_counter == 0) {
     set_event(EVENT_MODBUS_INVERTER_MISSING, 0);
-    set_state(STATE0_STANDBY);
+    set_state(STATE0_STANDBY, true);
   } else {
     clear_event(EVENT_MODBUS_INVERTER_MISSING);
   }
@@ -409,12 +416,28 @@ void receive_RS485()  // Runs as fast as possible to handle the serial stream
 
   if (Serial.available()) {
     /* manually signal that the contactors have been closed */
-    if (state == STATE1_CLOSE_CONTACTORS) {
+    if (state == STATE1_READY_TO_CLOSE) {
       if (Serial.read() == 10) {
         set_state(STATE2_CLOSING_DONE);
       }
     } else {
-        Serial.read(); /* eat it */
+        // TODO: remove me
+        int request = Serial.read();
+        if (request == '0') {
+            set_state(STATE0_STANDBY, true);
+            Serial.read(); /* discard '\n' right after it */
+        } else if (request == '1') {
+            set_state(STATE1_READY_TO_CLOSE, true);
+            Serial.read(); /* discard '\n' right after it */
+        } else if (request == '2') {
+            set_state(STATE2_CLOSING_DONE, true);
+            Serial.read(); /* discard '\n' right after it */
+        } else if (request == '3') {
+            set_state(STATE3_OPERATE, true);
+            Serial.read(); /* discard '\n' right after it */
+        } else {
+            /* just eat that byte */
+        }
     }
   }
 
@@ -452,8 +475,8 @@ void receive_RS485()  // Runs as fast as possible to handle the serial stream
                 }
                 else if (RS485_RXFRAME[7] == 0x02) {
                   // request to apply voltage?
-                  Serial.println("let's CLOSE THE CONTACTORS");
-                  set_state(STATE1_CLOSE_CONTACTORS);
+                  set_state(STATE2_CLOSING_DONE);
+                  closing_done_count = 0;
                   send_kostal(frame4, 8); // ACK
                 }
                 else if (RS485_RXFRAME[7] == 0x04) {
@@ -473,7 +496,7 @@ void receive_RS485()  // Runs as fast as possible to handle the serial stream
                 if (code == 0x44a) {
                   if (state == STATE2_CLOSING_DONE) {
                       closing_done_count++;
-                      if (closing_done_count >= 5) {
+                      if (closing_done_count >= 8) {
                           set_state(STATE3_OPERATE);
                           closing_done_count = 0;
                       }
@@ -487,6 +510,10 @@ void receive_RS485()  // Runs as fast as possible to handle the serial stream
                   tmpframe[62] = calculate_kostal_crc(tmpframe, 62);
                   scramble_null_bytes(tmpframe,65);
                   send_kostal(tmpframe, 64);
+
+                  if (state == STATE0_STANDBY) {
+                      set_state(STATE1_READY_TO_CLOSE);
+                  }
                 }
                 else if (code == 0x84a) {
                   //Send  battery info
