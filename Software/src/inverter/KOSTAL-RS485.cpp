@@ -299,7 +299,11 @@ void update_RS485_registers_inverter() {
 
   float2frame(CyclicData, (float)410.0f, 10); // max voltage
 
-  float2frame(CyclicData, (float)17.1f, 14); // temperature
+  if (state == STATE0_STANDBY) {
+    float2frame(CyclicData, (float)0.0f, 14); // temperature
+  } else {
+    float2frame(CyclicData, (float)17.1f, 14); // temperature
+  }
 
   if (state == STATE4_OPERATE) {
     float2frame(CyclicData, (float)datalayer.battery.status.current_dA / 10, 18);  // Peak discharge? current (float)
