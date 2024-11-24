@@ -251,7 +251,7 @@ bool check_kostal_frame_crc(int len) {
   for (int i = 1; i < len; ++i) {
     sum += RS485_RXFRAME[i];
   }
-  if (((~sum + 1) & 0xff) == (RS485_RXFRAME[len] & 0xff)) {
+  if (((~sum + 1) & 0xff) == (RS485_RXFRAME[len - 1] & 0xff)) {
     return (true);
   } else {
     return (false);
