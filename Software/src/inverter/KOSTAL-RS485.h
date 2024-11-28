@@ -12,10 +12,4 @@
 #endif
 #endif
 
-#ifdef DEBUG_VIA_USB
-#ifndef DEBUG_KOSTAL_RS485_DATA
-#define DEBUG_KOSTAL_RS485_DATA
-#endif
-#endif
-
 #endif
