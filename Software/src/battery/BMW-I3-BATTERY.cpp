@@ -899,7 +899,7 @@ void send_can_battery() {
         if (first) {
            Serial.print("[");
            Serial.print(millis());
-           Serial.println("] BMW i3: close contactors");
+           Serial.println(" ms] BMW i3: close contactors");
            first = false;
         }
 #endif
