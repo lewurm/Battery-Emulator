@@ -14,7 +14,6 @@ static int16_t average_temperature_dC = 0;
 static uint8_t incoming_message_counter = RS485_HEALTHY;
 static int8_t f2_startup_count = 0;
 
-static boolean B1_delay = false;
 static unsigned long B1_last_millis = 0;
 static unsigned long currentMillis;
 static unsigned long startupMillis = 0;
@@ -150,12 +149,20 @@ byte calculate_frame1_crc(byte* lfc, int lastbyte) {
   return ((byte) ~(sum - 0x28) & 0xff);
 }
 
-bool check_kostal_frame_crc() {
+bool check_kostal_frame_crc(int length) {
   unsigned int sum = 0;
-  for (int i = 1; i < 8; ++i) {
+
+  /* assumption: There is no \0 byte except the terminating one */
+  if (RS485_RXFRAME[0] < length) {
+      /* except for one case, 07 63 FF 02 FF 29 5E 02 16 00 */
+      /* clear that byte at index 7*/
+      RS485_RXFRAME[RS485_RXFRAME[0]] = '\0';
+  }
+
+  for (int i = 1; i < length; ++i) {
     sum += RS485_RXFRAME[i];
   }
-  if (((~sum + 1) & 0xff) == (RS485_RXFRAME[8] & 0xff)) {
+  if (((~sum + 1) & 0xff) == (RS485_RXFRAME[length - 1] & 0xff)) {
     return (true);
   } else {
     return (false);
@@ -291,23 +298,15 @@ void receive_RS485()  // Runs as fast as possible to handle the serial stream
     }
   }
 
-  if (B1_delay) {
-    if ((currentMillis - B1_last_millis) > INTERVAL_1_S) {
-      send_kostal(frameB1b, 8);
-      B1_delay = false;
-#ifdef DEBUG_KOSTAL_RS485_DATA
-      Serial.println("B1_delay -> false");
-#endif
-    }
-  } else if (Serial2.available()) {
+  if (Serial2.available()) {
     RS485_RXFRAME[rx_index] = Serial2.read();
     if (RX_allow) {
       rx_index++;
       if (RS485_RXFRAME[rx_index - 1] == 0x00) {
-        if ((rx_index == 10) && (RS485_RXFRAME[0] == 0x09) && register_content_ok) {
+        if ((rx_index == 10) && (RS485_RXFRAME[0] == 0x09 || RS485_RXFRAME[0] == 0x07) && register_content_ok) {
           dump_rs485_data_rx("");
           rx_index = 0;
-          if (check_kostal_frame_crc()) {
+          if (check_kostal_frame_crc(10)) {
             incoming_message_counter = RS485_HEALTHY;
             bool headerA = true;
             bool headerB = true;
@@ -320,18 +319,22 @@ void receive_RS485()  // Runs as fast as possible to handle the serial stream
               }
             }
 
-            // "frame B1", maybe reset request, seen after battery power on/partial data
-            if (headerB && (RS485_RXFRAME[6] == 0x5E) && (RS485_RXFRAME[7] == 0xFF)) {
-              send_kostal(frameB1, 10);
-              B1_delay = true;
-              B1_last_millis = currentMillis;
-            }
+            // // "frame B1", maybe reset request, seen after battery power on/partial data
+            // if (headerB && (RS485_RXFRAME[6] == 0x5E) && (RS485_RXFRAME[7] == 0xFF)) {
+            //   send_kostal(frameB1, 10);
+            //   B1_delay = true;
+            //   B1_last_millis = currentMillis;
+            // }
 
             // "frame B1", maybe reset request, seen after battery power on/partial data
             if (headerB && (RS485_RXFRAME[6] == 0x5E) && (RS485_RXFRAME[7] == 0x04)) {
               send_kostal(frame4, 8);
               // This needs more reverse engineering, disabled...
             }
+			if (RS485_RXFRAME[6] == 0x5E && RS485_RXFRAME[7] == 0x00) {
+			  // clearance to apply voltage
+			  send_kostal(frame4, 8); // ACK
+			}
 
             if (headerA && (RS485_RXFRAME[6] == 0x4A) && (RS485_RXFRAME[7] == 0x08)) {  // "frame 1"
               send_kostal(frame1, 40);
