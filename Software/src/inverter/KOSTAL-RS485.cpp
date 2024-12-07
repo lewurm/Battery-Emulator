@@ -375,6 +375,7 @@ void receive_RS485()  // Runs as fast as possible to handle the serial stream
 void setup_inverter(void) {  // Performs one time setup at startup
   strncpy(datalayer.system.info.inverter_protocol, "BYD battery via Kostal RS485", 63);
   datalayer.system.info.inverter_protocol[63] = '\0';
+  datalayer.system.status.inverter_allows_contactor_closing = false;  // The inverter needs to allow first
 }
 
 #endif
