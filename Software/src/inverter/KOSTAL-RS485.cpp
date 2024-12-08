@@ -20,6 +20,7 @@ static unsigned long startupMillis = 0;
 static unsigned long contactorMillis = 0;
 
 static int32_t closing_done_count = 0;
+static int32_t timeout_asking_count = 0;
 
 #define STATE0_STANDBY 0
 #define STATE1_ASKING_TO_CLOSE 1
@@ -174,7 +175,9 @@ static void send_kostal(byte* arr, int alen) {
 #ifdef DEBUG_KOSTAL_RS485_DATA
   Serial.print("[");
   Serial.print(millis());
-  Serial.print(" ms] TX: ");
+  Serial.print(" ms] TX(state=");
+  Serial.print(state);
+  Serial.print("): ");
   for (int i = 0; i < alen; i++) {
     if (arr[i] < 0x10) {
       Serial.print("0");
@@ -232,6 +235,7 @@ static void reset_state(void) {
   f2_startup_count = 14;
   closing_done_count = 0;
   contactorMillis = 0;
+  timeout_asking_count = 0;
   state = STATE0_STANDBY;
   datalayer.system.status.inverter_allows_contactor_closing = false;  // The inverter needs to allow first
 }
@@ -258,6 +262,18 @@ void update_RS485_registers_inverter() {
   float2frameMSB(frame2, (float)datalayer.battery.info.max_design_voltage_dV / 10, 12);
 
   float2frameMSB(frame2, (float)average_temperature_dC / 10, 16);
+
+  if (state == STATE1_ASKING_TO_CLOSE) {
+      timeout_asking_count++;
+
+      if (timeout_asking_count > 23) {
+        /* fake it for one frame */
+        float2frame(frame2, (float)datalayer.battery.status.voltage_dV / 10, 6);
+
+        Serial.println("!!! HACK VOLTAGE BUMP !!!");
+        timeout_asking_count = 0;
+      }
+  }
 
   //  Some current values causes communication error, must be resolved, why.
   //  float2frameMSB(frame2, (float)datalayer.battery.status.current_dA / 10, 20);  // Peak discharge? current (2 byte float)
