@@ -367,7 +367,13 @@ void receive_RS485()  // Runs as fast as possible to handle the serial stream
   if (contactorMillis != 0 && state == STATE2_READY_TO_CLOSE) {
     if ((currentMillis - contactorMillis) >= INTERVAL_2_S) {
       set_state(STATE3_CLOSING_DONE);
+      Serial.print("state wtf(contacotrMillis reset before): ");
+      Serial.print(state);
+      Serial.println("");
       contactorMillis = 0;
+      Serial.print("state wtf(contacotrMillis reset after): ");
+      Serial.print(state);
+      Serial.println("");
     }
   }
 #if 0
@@ -510,9 +516,21 @@ void receive_RS485()  // Runs as fast as possible to handle the serial stream
           }
         }
       } else {
+        Serial.print("state wtf(dropped before): ");
+        Serial.print(state);
+        Serial.println("");
         dump_rs485_data_rx(" (dropped)");
+        Serial.print("state wtf(dropped after): ");
+        Serial.print(state);
+        Serial.println("");
       }
+      Serial.print("state wtf(rxindex reset before): ");
+      Serial.print(state);
+      Serial.println("");
       rx_index = 0;
+      Serial.print("state wtf(rxindex reset after): ");
+      Serial.print(state);
+      Serial.println("");
     }
   }
 }
