@@ -408,6 +408,13 @@ void receive_RS485()  // Runs as fast as possible to handle the serial stream
           // "frame B1", maybe reset request, seen after battery power on/partial data
           if (headerB && (RS485_RXFRAME[6] == 0x5E) && (RS485_RXFRAME[7] == 0x04)) {
             send_kostal(frame4, 8);
+            datalayer.system.status.inverter_allows_contactor_closing = true;
+            set_state(STATE2_READY_TO_CLOSE);
+#ifdef DEBUG_KOSTAL_RS485_DATA
+            Serial.println("Kostal(!!!): inverter_allows_contactor_closing -> true");
+            Serial.println("-> state partial");
+            Serial.println("");
+#endif
             // This needs more reverse engineering, disabled...
           }
 
@@ -418,8 +425,7 @@ void receive_RS485()  // Runs as fast as possible to handle the serial stream
             set_state(STATE2_READY_TO_CLOSE);
 #ifdef DEBUG_KOSTAL_RS485_DATA
             Serial.println("Kostal(!!!): inverter_allows_contactor_closing -> true");
-            Serial.print("f2_startup_count: "); Serial.print(f2_startup_count);
-            Serial.println("");
+            Serial.println("-> state fresh");
             Serial.println("");
 #endif
           }
