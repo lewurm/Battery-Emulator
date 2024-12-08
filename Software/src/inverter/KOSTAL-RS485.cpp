@@ -28,7 +28,7 @@ static int32_t timeout_asking_count = 0;
 #define STATE3_CLOSING_DONE 3
 #define STATE4_OPERATE 4
 
-static int8_t state = STATE0_STANDBY;
+static int8_t state;
 
 union f32b {
   float f;
@@ -111,6 +111,7 @@ bool register_content_ok = false;
 
 static void set_state(int next_state, bool force) {
     if (state == 0 && state == next_state) {
+        Serial.println("WTF???");
         return;
     }
     Serial.print("[");
@@ -232,11 +233,15 @@ static bool check_kostal_frame_crc(int length) {
 }
 
 static void reset_state(void) {
+  Serial.print("[");
+  Serial.print(millis());
+  Serial.println(" ms] WTF RESET STATE");
+
   f2_startup_count = 14;
   closing_done_count = 0;
   contactorMillis = 0;
   timeout_asking_count = 0;
-  state = STATE0_STANDBY;
+  set_state(STATE0_STANDBY);
   datalayer.system.status.inverter_allows_contactor_closing = false;  // The inverter needs to allow first
 }
 
@@ -424,10 +429,10 @@ void receive_RS485()  // Runs as fast as possible to handle the serial stream
           // "frame B1", maybe reset request, seen after battery power on/partial data
           if (headerB && (RS485_RXFRAME[6] == 0x5E) && (RS485_RXFRAME[7] == 0x04)) {
             send_kostal(frame4, 8);
-            datalayer.system.status.inverter_allows_contactor_closing = true;
-            set_state(STATE2_READY_TO_CLOSE);
+            datalayer.system.status.inverter_allows_contactor_closing = false;
+            set_state(STATE1_ASKING_TO_CLOSE, true);
 #ifdef DEBUG_KOSTAL_RS485_DATA
-            Serial.println("Kostal(!!!): inverter_allows_contactor_closing -> true");
+            Serial.println("Kostal(!!!): inverter_allows_contactor_closing -> false");
             Serial.println("-> state partial");
             Serial.println("");
 #endif
@@ -437,13 +442,23 @@ void receive_RS485()  // Runs as fast as possible to handle the serial stream
           if (RS485_RXFRAME[6] == 0x5E && RS485_RXFRAME[7] == 0x00) {
             // clearance to apply voltage
             send_kostal(frame4, 8); // ACK
-            datalayer.system.status.inverter_allows_contactor_closing = true;
-            set_state(STATE2_READY_TO_CLOSE);
+            if (!datalayer.system.status.inverter_allows_contactor_closing) {
+              datalayer.system.status.inverter_allows_contactor_closing = true;
+              set_state(STATE2_READY_TO_CLOSE, true);
 #ifdef DEBUG_KOSTAL_RS485_DATA
-            Serial.println("Kostal(!!!): inverter_allows_contactor_closing -> true");
-            Serial.println("-> state fresh");
-            Serial.println("");
+              Serial.println("Kostal(!!!): inverter_allows_contactor_closing -> true");
+              Serial.println("-> state fresh");
+              Serial.println("");
 #endif
+            } else {
+              datalayer.system.status.inverter_allows_contactor_closing = false;
+              set_state(STATE1_ASKING_TO_CLOSE, true);
+#ifdef DEBUG_KOSTAL_RS485_DATA
+              Serial.println("Kostal(!!!): inverter_allows_contactor_closing -> false");
+              Serial.println("-> state fresh (WEIRD)");
+              Serial.println("");
+#endif
+            }
           }
 
           if (headerA && (RS485_RXFRAME[6] == 0x4A) && (RS485_RXFRAME[7] == 0x08)) {  // "frame 1"
