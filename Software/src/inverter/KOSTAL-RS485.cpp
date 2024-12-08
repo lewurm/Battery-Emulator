@@ -363,9 +363,8 @@ static uint8_t rx_index = 0;
 
 void receive_RS485()  // Runs as fast as possible to handle the serial stream
 {
-
-  if (!contactorMillis && state == STATE2_READY_TO_CLOSE) {
-    currentMillis = millis();
+  currentMillis = millis();
+  if (contactorMillis != 0 && state == STATE2_READY_TO_CLOSE) {
     if ((currentMillis - contactorMillis) >= INTERVAL_2_S) {
       set_state(STATE3_CLOSING_DONE);
       contactorMillis = 0;
@@ -445,6 +444,7 @@ void receive_RS485()  // Runs as fast as possible to handle the serial stream
             if (!datalayer.system.status.inverter_allows_contactor_closing) {
               datalayer.system.status.inverter_allows_contactor_closing = true;
               set_state(STATE2_READY_TO_CLOSE, true);
+              contactorMillis = currentMillis;
 #ifdef DEBUG_KOSTAL_RS485_DATA
               Serial.println("Kostal(!!!): inverter_allows_contactor_closing -> true");
               Serial.println("-> state fresh");
