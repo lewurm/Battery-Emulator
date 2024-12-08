@@ -19,44 +19,54 @@ static unsigned long currentMillis;
 static unsigned long startupMillis = 0;
 static unsigned long contactorMillis = 0;
 
+static int32_t closing_done_count = 0;
+
+#define STATE0_STANDBY 0
+#define STATE1_ASKING_TO_CLOSE 1
+#define STATE2_READY_TO_CLOSE 2
+#define STATE3_CLOSING_DONE 3
+#define STATE4_OPERATE 4
+
+static int8_t state = STATE0_STANDBY;
+
 union f32b {
   float f;
   byte b[4];
 };
 
 uint8_t frame1[40] = {0x06, 0xE2, 0xFF, 0x02, 0xFF, 0x29,  // Frame header
-                      0x01, 0x08, 0x80, 0x43,  // 256.063 Nominal voltage / 5*51.2=256      first byte 0x01 or 0x04
+                      0x00, 0x00, 0x80, 0x43,  // 256.063 Nominal voltage / 5*51.2=256      first byte 0x01 or 0x04
                       0xE4, 0x70, 0x8A, 0x5C,  // These might be Umin & Unax, Uint16
-                      0xB5, 0x02, 0xD3, 0x01,  // Battery Serial number? Modbus register 527
-                      0x01, 0x05, 0xC8, 0x41,  // 25.0024  ?
+                      0xB5, 0x00, 0xD3, 0x00,  // Battery Serial number? Modbus register 527
+                      0x00, 0x00, 0xC8, 0x41,  // 25.0024  ?
                       0xC2, 0x18,              // Battery Firmware, modbus register 586
-                      0x01, 0x03, 0x59, 0x42,  // 0x00005942 = 54.25 ??
-                      0x01, 0x01, 0x01, 0x02, 0x05, 0x02, 0xA0, 0x01, 0x01, 0x02,
+                      0x00, 0x00, 0x59, 0x42,  // 0x00005942 = 54.25 ??
+                      0x00, 0x00, 0x00, 0x00, 0x05, 0x00, 0xA0, 0x00, 0x00, 0x00,
                       0x4D,   // CRC
                       0x00};  //
 
 // values in frame2 will be overwritten at update_modbus_registers_inverter()
 
 uint8_t frame2[64] = {
-    0x0A,  // This may also been 0x06, seen at startup when live values not valid, but also occasionally single frames.
+    0x00,  // This may also been 0x06, seen at startup when live values not valid, but also occasionally single frames.
     0xE2, 0xFF, 0x02, 0xFF, 0x29,  // frame Header
 
     0x1D, 0x5A, 0x85, 0x43,  // Current Voltage  (float)                        Modbus register 216, Bytes 6-9
-    0x01, 0x03,              // Unknown, 0x03 seen also 0x0F, 0x07, might hava something to do with current
+    0x00, 0x00,              // Unknown, 0x03 seen also 0x0F, 0x07, might hava something to do with current
     0x8D, 0x43,              // Max Voltage      (2 byte float),                                     Bytes 12-13
-    0x01, 0x03, 0xAC, 0x41,  // BAttery Temperature        (2 byte float)       Modbus register 214, Bytes 16-17
-    0x01, 0x01, 0x01,
-    0x01,  // Peak Current (1s period?),  Bytes 18-21 - Communication fault seen with some values (>10A?)
-    0x01, 0x01, 0x01,
-    0x01,  // Avg current  (1s period?), Bytes 22-25  - Communication fault seen with some values (>10A?)
+    0x00, 0x00, 0xAC, 0x41,  // BAttery Temperature        (2 byte float)       Modbus register 214, Bytes 16-17
+    0x00, 0x00, 0x00,
+    0x00,  // Peak Current (1s period?),  Bytes 18-21 - Communication fault seen with some values (>10A?)
+    0x00, 0x00, 0x00,
+    0x00,  // Avg current  (1s period?), Bytes 22-25  - Communication fault seen with some values (>10A?)
 
-    0x01, 0x03, 0x48, 0x42,  // Max discharge current (2 byte float), Bit 26-29,
+    0x00, 0x00, 0x48, 0x42,  // Max discharge current (2 byte float), Bit 26-29,
                              // Sunspec: ADisChaMax
 
-    0x01, 0x03,  // Unknown
+    0x00, 0x00,  // Unknown
     0xC8, 0x41,  // Battery gross capacity, Ah (2 byte float) , Bytes 30-33, Modbus 512
 
-    0x01,  // Unknown
+    0x00,  // Unknown
     0x16,  // This seems to have something to do with cell temperatures
 
     0xA0, 0x41,  // Max charge current (2 byte float) Bit 36-37, ZERO WHEN SOC=100
@@ -70,12 +80,12 @@ uint8_t frame2[64] = {
 
     0xFE,  // Cylce count , Bit 54
     0x04,  // Cycle count? , Bit 55
-    0x01,  // Byte 56
-    0x40,  // When SOC=100 Byte57=0x40, at startup 0x03 (about 7 times), otherwise 0x02
+    0x00,  // Byte 56
+    0x00,  // When SOC=100 Byte57=0x40, at startup 0x03 (about 7 times), otherwise 0x02
     0x64,  // SOC , Bit 58
-    0x01,  // Unknown, when byte 57 = 0x03, this 0x02, otherwise 0x01
-    0x01,  // Unknown, Seen only 0x01
-    0x02,  // Unknown, Mostly 0x02. seen also 0x01
+    0x00,  // Unknown, when byte 57 = 0x03, this 0x02, otherwise 0x01
+    0x00,  // Unknown, Seen only 0x01
+    0x00,  // Unknown, Mostly 0x02. seen also 0x01
     0x00,  // CRC (inverted sum of bytes 1-62 + 0xC0), Bit 62
     0x00};
 
@@ -98,7 +108,53 @@ uint8_t RS485_RXFRAME[10];
 
 bool register_content_ok = false;
 
-void float2frame(byte* arr, float value, byte framepointer) {
+static void set_state(int next_state, bool force) {
+    if (state == 0 && state == next_state) {
+        return;
+    }
+    Serial.print("[");
+    Serial.print(millis());
+    Serial.print(" ms] SWITCH STATE: before=");
+    Serial.print(state);
+    Serial.print(", next=");
+    Serial.print(next_state);
+    Serial.println();
+
+    if (force) {
+        Serial.println(" forced transition");
+        state = next_state;
+    } else if ((state == 0 && next_state == 0) || (state == 0 && next_state == 1) || (state == 1 && next_state == 2) || (state == 2 && next_state == 3)) {
+        /* all good */
+        state = next_state;
+    } else if (state == 3 && next_state == 0) {
+        state = next_state;
+        Serial.println("    -> state reset");
+    } else {
+        Serial.println("    -> state transition IGNORED");
+    }
+}
+static void set_state(int next_state) {
+    set_state(next_state, false);
+}
+
+static void print_state(void) {
+    Serial.print("[");
+    Serial.print(millis());
+    Serial.print(" ms] ");
+    if (state == STATE0_STANDBY) {
+        Serial.println("  >> STATE0_STANDBY <<");
+    } else if (state == STATE1_ASKING_TO_CLOSE) {
+        Serial.println("  >> STATE1_ASKING_TO_CLOSE <<");
+    } else if (state == STATE2_READY_TO_CLOSE) {
+        Serial.println("  >> STATE2_READY_TO_CLOSE <<");
+    } else if (state == STATE3_CLOSING_DONE) {
+        Serial.println("  >> STATE3_CLOSING_DONE <<");
+    } else if (state == STATE4_OPERATE) {
+        Serial.println("  >> STATE4_OPERATE <<");
+    }
+}
+
+static void float2frame(byte* arr, float value, byte framepointer) {
   f32b g;
   g.f = value;
   arr[framepointer] = g.b[0];
@@ -107,14 +163,14 @@ void float2frame(byte* arr, float value, byte framepointer) {
   arr[framepointer + 3] = g.b[3];
 }
 
-void float2frameMSB(byte* arr, float value, byte framepointer) {
+static void float2frameMSB(byte* arr, float value, byte framepointer) {
   f32b g;
   g.f = value;
   arr[framepointer + 0] = g.b[2];
   arr[framepointer + 1] = g.b[3];
 }
 
-void send_kostal(byte* arr, int alen) {
+static void send_kostal(byte* arr, int alen) {
 #ifdef DEBUG_KOSTAL_RS485_DATA
   Serial.print("[");
   Serial.print(millis());
@@ -131,23 +187,28 @@ void send_kostal(byte* arr, int alen) {
   Serial2.write(arr, alen);
 }
 
-byte calculate_longframe_crc(byte* lfc, int lastbyte) {
-  unsigned int sum = 0;
-  for (int i = 0; i < lastbyte; ++i) {
-    sum += lfc[i];
+static void scramble_null_bytes(byte *lfc, int len) {
+  int last_null_byte = 0;
+  for (int i = 0; i < len; i++) {
+    if (lfc[i] == '\0') {
+      lfc[last_null_byte] = (byte) (i - last_null_byte);
+      last_null_byte = i;
+    }
   }
-  return ((byte) ~(sum + 0xc0) & 0xff);
 }
 
-byte calculate_frame1_crc(byte* lfc, int lastbyte) {
+static byte calculate_kostal_crc(byte *lfc, int len) {
   unsigned int sum = 0;
-  for (int i = 0; i < lastbyte; ++i) {
-    sum += lfc[i];
+  if (lfc[0] != 0) {
+      printf("WARNING: first byte should be 0, but is 0x%02x\n", lfc[0]);
   }
-  return ((byte) ~(sum - 0x28) & 0xff);
+  for (int i = 1; i < len; i++) {
+      sum += lfc[i];
+  }
+  return (byte) (-sum & 0xff);
 }
 
-bool check_kostal_frame_crc(int length) {
+static bool check_kostal_frame_crc(int length) {
   unsigned int sum = 0;
 
   /* assumption: There is no \0 byte except the terminating one */
@@ -167,6 +228,14 @@ bool check_kostal_frame_crc(int length) {
   }
 }
 
+static reset_state(void) {
+  f2_startup_count = 14;
+  closing_done_count = 0;
+  contactorMillis = 0;
+  state = STATE0_STANDBY;
+  datalayer.system.status.inverter_allows_contactor_closing = false;  // The inverter needs to allow first
+}
+
 void update_RS485_registers_inverter() {
 
   average_temperature_dC =
@@ -175,11 +244,9 @@ void update_RS485_registers_inverter() {
     average_temperature_dC = 0;
   }
 
-  if (f2_startup_count <= 5) {
+  if (state == STATE3_CLOSING_DONE || state == STATE4_OPERATE) {
     float2frame(frame2, (float)datalayer.battery.status.voltage_dV / 10, 6);  // Confirmed OK mapping
-    frame2[0] = 0x0A;
   } else {
-    frame2[0] = 0x06;
     float2frame(frame2, 0.0, 6);
   }
   // Set nominal voltage to value between min and max voltage set by battery (Example 400 and 300 results in 350V)
@@ -200,23 +267,35 @@ void update_RS485_registers_inverter() {
 
   float2frameMSB(frame2, (float)datalayer.battery.status.max_discharge_current_dA / 10, 32);
 
-  // When SOC = 100%, drop down allowed charge current down.
-
-  if ((datalayer.battery.status.reported_soc / 100) < 100) {
-    float2frameMSB(frame2, (float)datalayer.battery.status.max_charge_current_dA / 10, 36);
-    frame2[57] = 0x02;
-    frame2[59] = 0x01;
+  frame2[57] = 0;
+  if (state == STATE3_CLOSING_DONE || state == STATE4_OPERATE) {
+    // When SOC = 100%, drop down allowed charge current down.
+    if ((datalayer.battery.status.reported_soc / 100) < 100) {
+      float2frameMSB(frame2, (float)datalayer.battery.status.max_charge_current_dA / 10, 36);
+    } else {
+      float2frameMSB(frame2, 0.0, 36);
+      frame2[57] |= 0x40;
+    }
   } else {
     float2frameMSB(frame2, 0.0, 36);
-    //frame2[57]=0x40;
-    frame2[57] = 0x02;
-    frame2[59] = 0x01;
   }
 
-  // On startup, byte 57 seems to be always 0x03 couple of frames,.
-  if (f2_startup_count > 0) {
-    frame2[57] = 0x03;
+  if (state == STATE3_CLOSING_DONE || state == STATE4_OPERATE) {
+    frame2[56] = 0x01;  // Battery ready!  Contactors closed (?)
+  } else {
+    frame2[56] = 0x00;
+  }
+
+  if (state == STATE4_OPERATE) {
+    frame2[59] = 0x00;
+  } else {
     frame2[59] = 0x02;
+  }
+
+  if (state == STATE0_STANDBY) {
+    frame2[61] = 0x01; // only set on first message with inverter
+  } else {
+    frame2[61] = 0x00;
   }
 
   float2frame(frame2, (float)datalayer.battery.status.temperature_max_dC / 10, 38);
@@ -229,16 +308,13 @@ void update_RS485_registers_inverter() {
 
   register_content_ok = true;
 
-  frame1[38] = calculate_frame1_crc(frame1, 38);
-
   if (incoming_message_counter > 0) {
     incoming_message_counter--;
   }
 
   if (incoming_message_counter == 0) {
     set_event(EVENT_MODBUS_INVERTER_MISSING, 0);
-    datalayer.system.status.inverter_allows_contactor_closing = false;
-    f2_startup_count = 14;
+    reset_state();
   } else {
     clear_event(EVENT_MODBUS_INVERTER_MISSING);
   }
@@ -266,8 +342,14 @@ static uint8_t rx_index = 0;
 
 void receive_RS485()  // Runs as fast as possible to handle the serial stream
 {
-  currentMillis = millis();
 
+  if (!contactorsMillis && state == STATE2_READY_TO_CLOSE) {
+    currentMillis = millis();
+    if ((currentMillis - contactorsMillis) >= INTERVAL_2_S) {
+      set_state(STATE3_CLOSING_DONE);
+      contactorsMillis = 0;
+    }
+  }
 #if 0
   if (datalayer.system.status.battery_allows_contactor_closing & !contactorMillis) {
     contactorMillis = currentMillis;
@@ -333,6 +415,7 @@ void receive_RS485()  // Runs as fast as possible to handle the serial stream
             // clearance to apply voltage
             send_kostal(frame4, 8); // ACK
             datalayer.system.status.inverter_allows_contactor_closing = true;
+            set_state(STATE2_READY_TO_CLOSE);
 #ifdef DEBUG_KOSTAL_RS485_DATA
             Serial.println("Kostal(!!!): inverter_allows_contactor_closing -> true");
             Serial.print("f2_startup_count: "); Serial.print(f2_startup_count);
@@ -342,29 +425,47 @@ void receive_RS485()  // Runs as fast as possible to handle the serial stream
           }
 
           if (headerA && (RS485_RXFRAME[6] == 0x4A) && (RS485_RXFRAME[7] == 0x08)) {  // "frame 1"
-            send_kostal(frame1, 40);
+            byte tmpframe[40];  //copy values to prevent data manipulation during rewrite/crc calculation
+            memcpy(tmpframe, frame1, 40);
+            tmpframe[38] = calculate_kostal_crc(tmpframe, 38);
+            scramble_null_bytes(tmpframe, 40);
+            send_kostal(tmpframe, 40);
             f2_startup_count = 14;
-            if (!startupMillis) {
-              startupMillis = currentMillis;
-            }
           }
           if (headerA && (RS485_RXFRAME[6] == 0x4A) && (RS485_RXFRAME[7] == 0x04)) {  // "frame 2"
-            if (f2_startup_count >= 0) {
+            if (f2_startup_count > 0) {
               f2_startup_count--;
+#ifdef DEBUG_KOSTAL_RS485_DATA
+              Serial.print("[");
+              Serial.print(millis());
+              Serial.print(" ms] f2_startup_count: ");
+              Serial.print(f2_startup_count);
+              Serial.println();
+              Serial.println();
+#endif
+            }
+            if (state == STATE3_CLOSING_DONE) {
+                closing_done_count++;
+                if (closing_done_count >= 8) {
+                    set_state(STATE4_OPERATE);
+                    closing_done_count = 0;
+                }
             }
 
             update_values_battery();
             update_RS485_registers_inverter();
 
+
             byte tmpframe[64];  //copy values to prevent data manipulation during rewrite/crc calculation
-            memcpy(tmpframe, frame2, 64);
-            for (int i = 1; i < 63; i++) {
-              if (tmpframe[i] == 0x00) {
-                tmpframe[i] = 0x01;
-              }
-            }
-            tmpframe[62] = calculate_longframe_crc(tmpframe, 62);
+            memcpy(tmpframe, CyclicData, 64);
+            tmpframe[62] = calculate_kostal_crc(tmpframe, 62);
+            scramble_null_bytes(tmpframe,65);
             send_kostal(tmpframe, 64);
+
+            /* only send one frame in STATE0_STANDBY */
+            if (state == STATE0_STANDBY) {
+              set_state(STATE1_ASKING_TO_CLOSE);
+            }
           }
           if (headerA && (RS485_RXFRAME[6] == 0x53) && (RS485_RXFRAME[7] == 0x03)) {
             /* Battery error. send everything okay */
@@ -382,8 +483,7 @@ void receive_RS485()  // Runs as fast as possible to handle the serial stream
 void setup_inverter(void) {  // Performs one time setup at startup
   strncpy(datalayer.system.info.inverter_protocol, "BYD battery via Kostal RS485", 63);
   datalayer.system.info.inverter_protocol[63] = '\0';
-  f2_startup_count = 14;
-  datalayer.system.status.inverter_allows_contactor_closing = false;  // The inverter needs to allow first
+  reset_state();
 }
 
 #endif
