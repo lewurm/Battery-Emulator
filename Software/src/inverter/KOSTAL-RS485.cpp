@@ -34,7 +34,7 @@ union f32b {
   byte b[4];
 };
 
-uint8_t frame1[40] = {0x06, 0xE2, 0xFF, 0x02, 0xFF, 0x29,  // Frame header
+uint8_t frame1[40] = {0x00, 0xE2, 0xFF, 0x02, 0xFF, 0x29,  // Frame header
                       0x00, 0x00, 0x80, 0x43,  // 256.063 Nominal voltage / 5*51.2=256      first byte 0x01 or 0x04
                       0xE4, 0x70, 0x8A, 0x5C,  // These might be Umin & Unax, Uint16
                       0xB5, 0x00, 0xD3, 0x00,  // Battery Serial number? Modbus register 527
@@ -123,7 +123,7 @@ static void set_state(int next_state, bool force) {
     if (force) {
         Serial.println(" forced transition");
         state = next_state;
-    } else if ((state == 0 && next_state == 0) || (state == 0 && next_state == 1) || (state == 1 && next_state == 2) || (state == 2 && next_state == 3)) {
+    } else if ((state == 0 && next_state == 0) || (state == 0 && next_state == 1) || (state == 1 && next_state == 2) || (state == 2 && next_state == 3) || (state == 3 && next_state == 4)) {
         /* all good */
         state = next_state;
     } else if (state == 3 && next_state == 0) {
@@ -228,7 +228,7 @@ static bool check_kostal_frame_crc(int length) {
   }
 }
 
-static reset_state(void) {
+static void reset_state(void) {
   f2_startup_count = 14;
   closing_done_count = 0;
   contactorMillis = 0;
@@ -343,11 +343,11 @@ static uint8_t rx_index = 0;
 void receive_RS485()  // Runs as fast as possible to handle the serial stream
 {
 
-  if (!contactorsMillis && state == STATE2_READY_TO_CLOSE) {
+  if (!contactorMillis && state == STATE2_READY_TO_CLOSE) {
     currentMillis = millis();
-    if ((currentMillis - contactorsMillis) >= INTERVAL_2_S) {
+    if ((currentMillis - contactorMillis) >= INTERVAL_2_S) {
       set_state(STATE3_CLOSING_DONE);
-      contactorsMillis = 0;
+      contactorMillis = 0;
     }
   }
 #if 0
@@ -381,7 +381,7 @@ void receive_RS485()  // Runs as fast as possible to handle the serial stream
   if (Serial2.available()) {
     RS485_RXFRAME[rx_index] = Serial2.read();
     rx_index++;
-    if (RS485_RXFRAME[rx_index - 1] == 0x00) {
+    if (RS485_RXFRAME[rx_index - 1] == 0x00 && !datalayer.system.settings.equipment_stop_active) {
       if ((rx_index == 10) && (RS485_RXFRAME[0] == 0x09 || RS485_RXFRAME[0] == 0x07) && register_content_ok) {
         dump_rs485_data_rx("");
         rx_index = 0;
@@ -457,7 +457,7 @@ void receive_RS485()  // Runs as fast as possible to handle the serial stream
 
 
             byte tmpframe[64];  //copy values to prevent data manipulation during rewrite/crc calculation
-            memcpy(tmpframe, CyclicData, 64);
+            memcpy(tmpframe, frame2, 64);
             tmpframe[62] = calculate_kostal_crc(tmpframe, 62);
             scramble_null_bytes(tmpframe,65);
             send_kostal(tmpframe, 64);
