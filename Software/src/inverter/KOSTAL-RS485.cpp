@@ -272,18 +272,6 @@ void update_RS485_registers_inverter() {
     float2frameMSB(frame2, 0.0f, 16);
   }
 
-  if (state == STATE1_ASKING_TO_CLOSE) {
-      timeout_asking_count++;
-
-      if (timeout_asking_count > 23) {
-        /* fake it for one frame */
-        float2frame(frame2, (float)datalayer.battery.status.voltage_dV / 10, 6);
-
-        Serial.println("!!! HACK VOLTAGE BUMP !!!");
-        timeout_asking_count = 0;
-      }
-  }
-
   //  Some current values causes communication error, must be resolved, why.
   //  float2frameMSB(frame2, (float)datalayer.battery.status.current_dA / 10, 20);  // Peak discharge? current (2 byte float)
   //  float2frameMSB(frame2, (float)datalayer.battery.status.current_dA / 10, 24);
@@ -403,6 +391,7 @@ void receive_RS485()  // Runs as fast as possible to handle the serial stream
       Serial.println("");
     }
   }
+
 #if 0
   if (datalayer.system.status.battery_allows_contactor_closing & !contactorMillis) {
     contactorMillis = currentMillis;
@@ -513,6 +502,21 @@ void receive_RS485()  // Runs as fast as possible to handle the serial stream
               Serial.println();
               Serial.println();
 #endif
+            }
+
+            if (state == STATE1_ASKING_TO_CLOSE) {
+              timeout_asking_count++;
+              if (timeout_asking_count > 33) {
+#if 0
+                /* fake it for one frame */
+                float2frame(frame2, (float)datalayer.battery.status.voltage_dV / 10, 6);
+
+                Serial.println("!!! HACK VOLTAGE BUMP !!!");
+#else
+                set_state(STATE0_STANDBY, true);
+#endif
+                timeout_asking_count = 0;
+              }
             }
             if (state == STATE3_CLOSING_DONE) {
                 closing_done_count++;
