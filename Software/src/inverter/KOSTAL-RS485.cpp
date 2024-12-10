@@ -28,7 +28,8 @@ static int32_t timeout_asking_count = 0;
 #define STATE3_CLOSING_DONE 3
 #define STATE4_OPERATE 4
 
-static int8_t state;
+/* fucking memory corruption shit?!?!? */
+int32_t kostal_state;
 
 union f32b {
   float f;
@@ -110,29 +111,29 @@ uint8_t RS485_RXFRAME[10];
 bool register_content_ok = false;
 
 static void set_state(int next_state, bool force) {
-    if (state == 0 && state == next_state) {
+    if (kostal_state == 0 && kostal_state == next_state) {
         Serial.println("WTF???");
         return;
     }
     Serial.print("[");
     Serial.print(millis());
-    Serial.print(" ms] SWITCH STATE: before=");
-    Serial.print(state);
+    Serial.print(" ms] SWITCH kostal_state: before=");
+    Serial.print(kostal_state);
     Serial.print(", next=");
     Serial.print(next_state);
     Serial.println();
 
     if (force) {
         Serial.println(" forced transition");
-        state = next_state;
-    } else if ((state == 0 && next_state == 0) || (state == 0 && next_state == 1) || (state == 1 && next_state == 2) || (state == 2 && next_state == 3) || (state == 3 && next_state == 4)) {
+        kostal_state = next_state;
+    } else if ((kostal_state == 0 && next_state == 0) || (kostal_state == 0 && next_state == 1) || (kostal_state == 1 && next_state == 2) || (kostal_state == 2 && next_state == 3) || (kostal_state == 3 && next_state == 4)) {
         /* all good */
-        state = next_state;
-    } else if (state == 3 && next_state == 0) {
-        state = next_state;
-        Serial.println("    -> state reset");
+        kostal_state = next_state;
+    } else if (kostal_state == 3 && next_state == 0) {
+        kostal_state = next_state;
+        Serial.println("    -> kostal_state reset");
     } else {
-        Serial.println("    -> state transition IGNORED");
+        Serial.println("    -> kostal_state transition IGNORED");
     }
 }
 static void set_state(int next_state) {
@@ -143,15 +144,15 @@ static void print_state(void) {
     Serial.print("[");
     Serial.print(millis());
     Serial.print(" ms] ");
-    if (state == STATE0_STANDBY) {
+    if (kostal_state == STATE0_STANDBY) {
         Serial.println("  >> STATE0_STANDBY <<");
-    } else if (state == STATE1_ASKING_TO_CLOSE) {
+    } else if (kostal_state == STATE1_ASKING_TO_CLOSE) {
         Serial.println("  >> STATE1_ASKING_TO_CLOSE <<");
-    } else if (state == STATE2_READY_TO_CLOSE) {
+    } else if (kostal_state == STATE2_READY_TO_CLOSE) {
         Serial.println("  >> STATE2_READY_TO_CLOSE <<");
-    } else if (state == STATE3_CLOSING_DONE) {
+    } else if (kostal_state == STATE3_CLOSING_DONE) {
         Serial.println("  >> STATE3_CLOSING_DONE <<");
-    } else if (state == STATE4_OPERATE) {
+    } else if (kostal_state == STATE4_OPERATE) {
         Serial.println("  >> STATE4_OPERATE <<");
     }
 }
@@ -176,8 +177,8 @@ static void send_kostal(byte* arr, int alen) {
 #ifdef DEBUG_KOSTAL_RS485_DATA
   Serial.print("[");
   Serial.print(millis());
-  Serial.print(" ms] TX(state=");
-  Serial.print(state);
+  Serial.print(" ms] TX(kostal_state=");
+  Serial.print(kostal_state);
   Serial.print("): ");
   for (int i = 0; i < alen; i++) {
     if (arr[i] < 0x10) {
@@ -235,7 +236,7 @@ static bool check_kostal_frame_crc(int length) {
 static void reset_state(void) {
   Serial.print("[");
   Serial.print(millis());
-  Serial.println(" ms] WTF RESET STATE");
+  Serial.println(" ms] WTF RESET kostal_state");
 
   f2_startup_count = 14;
   closing_done_count = 0;
@@ -253,7 +254,7 @@ void update_RS485_registers_inverter() {
     average_temperature_dC = 0;
   }
 
-  if (state == STATE3_CLOSING_DONE || state == STATE4_OPERATE) {
+  if (kostal_state == STATE3_CLOSING_DONE || kostal_state == STATE4_OPERATE) {
     float2frame(frame2, (float)datalayer.battery.status.voltage_dV / 10, 6);  // Confirmed OK mapping
   } else {
     float2frame(frame2, 0.0, 6);
@@ -266,13 +267,13 @@ void update_RS485_registers_inverter() {
 
   float2frameMSB(frame2, (float)datalayer.battery.info.max_design_voltage_dV / 10, 12);
 
-  if (state != STATE0_STANDBY) {
+  if (kostal_state != STATE0_STANDBY) {
     float2frameMSB(frame2, (float)average_temperature_dC / 10, 16);
   } else {
     float2frameMSB(frame2, 0.0f, 16);
   }
 
-  if (state == STATE1_ASKING_TO_CLOSE) {
+  if (kostal_state == STATE1_ASKING_TO_CLOSE) {
       timeout_asking_count++;
 
       if (timeout_asking_count > 23) {
@@ -290,14 +291,14 @@ void update_RS485_registers_inverter() {
 
   // FIXME
   float2frameMSB(frame2, 40.0, 28);  // BAttery capacity Ah
-  if (state != STATE0_STANDBY) {
+  if (kostal_state != STATE0_STANDBY) {
     float2frameMSB(frame2, (float)datalayer.battery.status.max_discharge_current_dA / 10, 32);
   } else {
     float2frameMSB(frame2, 0.0f, 32);
   }
 
   frame2[57] = 0;
-  if (state == STATE3_CLOSING_DONE || state == STATE4_OPERATE) {
+  if (kostal_state == STATE3_CLOSING_DONE || kostal_state == STATE4_OPERATE) {
     // When SOC = 100%, drop down allowed charge current down.
     if ((datalayer.battery.status.reported_soc / 100) < 100) {
       float2frameMSB(frame2, (float)datalayer.battery.status.max_charge_current_dA / 10, 36);
@@ -310,7 +311,7 @@ void update_RS485_registers_inverter() {
   }
 
   /* cycles */
-  if (state != STATE0_STANDBY) {
+  if (kostal_state != STATE0_STANDBY) {
     frame2[54] = 0x39;
     frame2[55] = 0x05;
   } else {
@@ -318,25 +319,25 @@ void update_RS485_registers_inverter() {
     frame2[55] = 0x00;
   }
 
-  if (state == STATE3_CLOSING_DONE || state == STATE4_OPERATE) {
+  if (kostal_state == STATE3_CLOSING_DONE || kostal_state == STATE4_OPERATE) {
     frame2[56] = 0x01;  // Battery ready!  Contactors closed (?)
   } else {
     frame2[56] = 0x00;
   }
 
-  if (state == STATE4_OPERATE) {
+  if (kostal_state == STATE4_OPERATE) {
     frame2[59] = 0x00;
   } else {
     frame2[59] = 0x02;
   }
 
-  if (state == STATE0_STANDBY) {
+  if (kostal_state == STATE0_STANDBY) {
     frame2[61] = 0x01; // only set on first message with inverter
   } else {
     frame2[61] = 0x00;
   }
 
-  if (state != STATE0_STANDBY) {
+  if (kostal_state != STATE0_STANDBY) {
     float2frame(frame2, (float)datalayer.battery.status.temperature_max_dC / 10, 38);
     float2frame(frame2, (float)datalayer.battery.status.temperature_min_dC / 10, 42);
   } else {
@@ -344,7 +345,7 @@ void update_RS485_registers_inverter() {
     float2frame(frame2, 0.0f, 42);
   }
 
-  if (state != STATE0_STANDBY) {
+  if (kostal_state != STATE0_STANDBY) {
     float2frame(frame2, (float)datalayer.battery.status.cell_max_voltage_mV / 1000, 46);
     float2frame(frame2, (float)datalayer.battery.status.cell_min_voltage_mV / 1000, 50);
   } else {
@@ -391,15 +392,15 @@ static uint8_t rx_index = 0;
 void receive_RS485()  // Runs as fast as possible to handle the serial stream
 {
   currentMillis = millis();
-  if (contactorMillis != 0 && state == STATE2_READY_TO_CLOSE) {
+  if (contactorMillis != 0 && kostal_state == STATE2_READY_TO_CLOSE) {
     if ((currentMillis - contactorMillis) >= INTERVAL_2_S) {
       set_state(STATE3_CLOSING_DONE);
-      Serial.print("state wtf(contacotrMillis reset before): ");
-      Serial.print(state);
+      Serial.print("kostal_state wtf(contacotrMillis reset before): ");
+      Serial.print(kostal_state);
       Serial.println("");
       contactorMillis = 0;
-      Serial.print("state wtf(contacotrMillis reset after): ");
-      Serial.print(state);
+      Serial.print("kostal_state wtf(contacotrMillis reset after): ");
+      Serial.print(kostal_state);
       Serial.println("");
     }
   }
@@ -465,7 +466,7 @@ void receive_RS485()  // Runs as fast as possible to handle the serial stream
             set_state(STATE1_ASKING_TO_CLOSE, true);
 #ifdef DEBUG_KOSTAL_RS485_DATA
             Serial.println("Kostal(!!!): inverter_allows_contactor_closing -> false");
-            Serial.println("-> state partial");
+            Serial.println("-> kostal_state partial");
             Serial.println("");
 #endif
             // This needs more reverse engineering, disabled...
@@ -480,7 +481,7 @@ void receive_RS485()  // Runs as fast as possible to handle the serial stream
               contactorMillis = currentMillis;
 #ifdef DEBUG_KOSTAL_RS485_DATA
               Serial.println("Kostal(!!!): inverter_allows_contactor_closing -> true");
-              Serial.println("-> state fresh");
+              Serial.println("-> kostal_state fresh");
               Serial.println("");
 #endif
             } else {
@@ -488,7 +489,7 @@ void receive_RS485()  // Runs as fast as possible to handle the serial stream
               set_state(STATE1_ASKING_TO_CLOSE, true);
 #ifdef DEBUG_KOSTAL_RS485_DATA
               Serial.println("Kostal(!!!): inverter_allows_contactor_closing -> false");
-              Serial.println("-> state fresh (WEIRD)");
+              Serial.println("-> kostal_state fresh (WEIRD)");
               Serial.println("");
 #endif
             }
@@ -514,7 +515,7 @@ void receive_RS485()  // Runs as fast as possible to handle the serial stream
               Serial.println();
 #endif
             }
-            if (state == STATE3_CLOSING_DONE) {
+            if (kostal_state == STATE3_CLOSING_DONE) {
                 closing_done_count++;
                 if (closing_done_count >= 8) {
                     set_state(STATE4_OPERATE);
@@ -533,7 +534,7 @@ void receive_RS485()  // Runs as fast as possible to handle the serial stream
             send_kostal(tmpframe, 64);
 
             /* only send one frame in STATE0_STANDBY */
-            if (state == STATE0_STANDBY) {
+            if (kostal_state == STATE0_STANDBY) {
               set_state(STATE1_ASKING_TO_CLOSE);
             }
           }
@@ -543,20 +544,20 @@ void receive_RS485()  // Runs as fast as possible to handle the serial stream
           }
         }
       } else {
-        Serial.print("state wtf(dropped before): ");
-        Serial.print(state);
+        Serial.print("kostal_state wtf(dropped before): ");
+        Serial.print(kostal_state);
         Serial.println("");
         dump_rs485_data_rx(" (dropped)");
-        Serial.print("state wtf(dropped after): ");
-        Serial.print(state);
+        Serial.print("kostal_state wtf(dropped after): ");
+        Serial.print(kostal_state);
         Serial.println("");
       }
-      Serial.print("state wtf(rxindex reset before): ");
-      Serial.print(state);
+      Serial.print("kostal_state wtf(rxindex reset before): ");
+      Serial.print(kostal_state);
       Serial.println("");
       rx_index = 0;
-      Serial.print("state wtf(rxindex reset after): ");
-      Serial.print(state);
+      Serial.print("kostal_state wtf(rxindex reset after): ");
+      Serial.print(kostal_state);
       Serial.println("");
     }
   }
