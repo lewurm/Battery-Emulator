@@ -266,7 +266,11 @@ void update_RS485_registers_inverter() {
 
   float2frameMSB(frame2, (float)datalayer.battery.info.max_design_voltage_dV / 10, 12);
 
-  float2frameMSB(frame2, (float)average_temperature_dC / 10, 16);
+  if (state != STATE0_STANDBY) {
+    float2frameMSB(frame2, (float)average_temperature_dC / 10, 16);
+  } else {
+    float2frameMSB(frame2, 0.0f, 16);
+  }
 
   if (state == STATE1_ASKING_TO_CLOSE) {
       timeout_asking_count++;
@@ -284,9 +288,13 @@ void update_RS485_registers_inverter() {
   //  float2frameMSB(frame2, (float)datalayer.battery.status.current_dA / 10, 20);  // Peak discharge? current (2 byte float)
   //  float2frameMSB(frame2, (float)datalayer.battery.status.current_dA / 10, 24);
 
-  float2frameMSB(frame2, (float)datalayer.battery.status.max_discharge_current_dA / 10, 28);  // BAttery capacity Ah
-
-  float2frameMSB(frame2, (float)datalayer.battery.status.max_discharge_current_dA / 10, 32);
+  // FIXME
+  float2frameMSB(frame2, 40.0, 28);  // BAttery capacity Ah
+  if (state != STATE0_STANDBY) {
+    float2frameMSB(frame2, (float)datalayer.battery.status.max_discharge_current_dA / 10, 32);
+  } else {
+    float2frameMSB(frame2, 0.0f, 32);
+  }
 
   frame2[57] = 0;
   if (state == STATE3_CLOSING_DONE || state == STATE4_OPERATE) {
@@ -299,6 +307,15 @@ void update_RS485_registers_inverter() {
     }
   } else {
     float2frameMSB(frame2, 0.0, 36);
+  }
+
+  /* cycles */
+  if (state != STATE0_STANDBY) {
+    frame2[54] = 0x39;
+    frame2[55] = 0x05;
+  } else {
+    frame2[54] = 0x00;
+    frame2[55] = 0x00;
   }
 
   if (state == STATE3_CLOSING_DONE || state == STATE4_OPERATE) {
@@ -319,11 +336,21 @@ void update_RS485_registers_inverter() {
     frame2[61] = 0x00;
   }
 
-  float2frame(frame2, (float)datalayer.battery.status.temperature_max_dC / 10, 38);
-  float2frame(frame2, (float)datalayer.battery.status.temperature_min_dC / 10, 42);
+  if (state != STATE0_STANDBY) {
+    float2frame(frame2, (float)datalayer.battery.status.temperature_max_dC / 10, 38);
+    float2frame(frame2, (float)datalayer.battery.status.temperature_min_dC / 10, 42);
+  } else {
+    float2frame(frame2, 0.0f, 38);
+    float2frame(frame2, 0.0f, 42);
+  }
 
-  float2frame(frame2, (float)datalayer.battery.status.cell_max_voltage_mV / 1000, 46);
-  float2frame(frame2, (float)datalayer.battery.status.cell_min_voltage_mV / 1000, 50);
+  if (state != STATE0_STANDBY) {
+    float2frame(frame2, (float)datalayer.battery.status.cell_max_voltage_mV / 1000, 46);
+    float2frame(frame2, (float)datalayer.battery.status.cell_min_voltage_mV / 1000, 50);
+  } else {
+    float2frame(frame2, 0.0f, 46);
+    float2frame(frame2, 0.0f, 50);
+  }
 
   frame2[58] = (byte)(datalayer.battery.status.reported_soc / 100);  // Confirmed OK mapping
 
