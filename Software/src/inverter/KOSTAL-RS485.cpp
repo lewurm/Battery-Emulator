@@ -530,7 +530,7 @@ void receive_RS485()  // Runs as fast as possible to handle the serial stream
             byte tmpframe[64];  //copy values to prevent data manipulation during rewrite/crc calculation
             memcpy(tmpframe, frame2, 64);
             tmpframe[62] = calculate_kostal_crc(tmpframe, 62);
-            scramble_null_bytes(tmpframe,65);
+            scramble_null_bytes(tmpframe, 64);
             send_kostal(tmpframe, 64);
 
             /* only send one frame in STATE0_STANDBY */
