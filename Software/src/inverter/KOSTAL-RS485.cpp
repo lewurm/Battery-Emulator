@@ -405,12 +405,15 @@ void receive_RS485()  // Runs as fast as possible to handle the serial stream
     }
   }
 
+#if 0
   if (kostal_state != STATE2_READY_TO_CLOSE && kostal_state != STATE3_CLOSING_DONE && kostal_state != STATE4_OPERATE) {
       if (datalayer.system.status.contactors_engaged) {
           // HACK: wtf...
           kostal_state = STATE3_CLOSING_DONE;
       }
   }
+#endif
+
 #if 0
   if (datalayer.system.status.battery_allows_contactor_closing & !contactorMillis) {
     contactorMillis = currentMillis;
@@ -559,13 +562,10 @@ void receive_RS485()  // Runs as fast as possible to handle the serial stream
         Serial.print(kostal_state);
         Serial.println("");
       }
-      Serial.print("kostal_state wtf(rxindex reset before): ");
-      Serial.print(kostal_state);
-      Serial.println("");
       rx_index = 0;
-      Serial.print("kostal_state wtf(rxindex reset after): ");
-      Serial.print(kostal_state);
-      Serial.println("");
+    }
+    if (rx_index >= 10) {
+        rx_index = 0;
     }
   }
 }
