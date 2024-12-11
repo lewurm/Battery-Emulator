@@ -129,7 +129,8 @@ static void set_state(int next_state, bool force) {
     } else if ((kostal_state == 0 && next_state == 0) || (kostal_state == 0 && next_state == 1) || (kostal_state == 1 && next_state == 2) || (kostal_state == 2 && next_state == 3) || (kostal_state == 3 && next_state == 4)) {
         /* all good */
         kostal_state = next_state;
-    } else if (kostal_state == 3 && next_state == 0) {
+    } else if (next_state == 0) {
+        /* always possible? */
         kostal_state = next_state;
         Serial.println("    -> kostal_state reset");
     } else {
