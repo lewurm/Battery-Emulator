@@ -404,6 +404,13 @@ void receive_RS485()  // Runs as fast as possible to handle the serial stream
       Serial.println("");
     }
   }
+
+  if (kostal_state != STATE2_READY_TO_CLOSE && kostal_state != STATE3_CLOSING_DONE && kostal_state != STATE4_OPERATE) {
+      if (datalayer.system.status.contactors_engaged) {
+          // HACK: wtf...
+          kostal_state = STATE3_CLOSING_DONE;
+      }
+  }
 #if 0
   if (datalayer.system.status.battery_allows_contactor_closing & !contactorMillis) {
     contactorMillis = currentMillis;
