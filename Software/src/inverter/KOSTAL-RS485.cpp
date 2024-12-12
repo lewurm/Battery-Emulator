@@ -442,6 +442,23 @@ void receive_RS485()  // Runs as fast as possible to handle the serial stream
     }
   }
 #endif
+  if (Serial.available()) {
+      byte input = Serial.read();
+      int request = Serial.read();
+      if (request == 'l') {
+        set_state(STATE0_STANDBY, true);
+        Serial.read(); /* discard '\n' right after it */
+      } else if (request == 'f') {
+        set_state(STATE2_READY_TO_CLOSE, true);
+        Serial.read(); /* discard '\n' right after it */
+        datalayer.system.status.inverter_allows_contactor_closing = true;
+        set_state(STATE2_READY_TO_CLOSE, true);
+        contactorMillis = currentMillis;
+      } else {
+        /* just it that byte */
+      }
+
+  }
 
   if (Serial2.available()) {
     RS485_RXFRAME[rx_index] = Serial2.read();
