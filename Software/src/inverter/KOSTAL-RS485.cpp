@@ -97,7 +97,7 @@ uint8_t frame4[8] = {0x07, 0xE3, 0xFF, 0x02, 0xFF, 0x29, 0xF4, 0x00};
 uint8_t frameB1[10] = {0x07, 0x63, 0xFF, 0x02, 0xFF, 0x29, 0x5E, 0x02, 0x16, 0x00};
 uint8_t frameB1b[8] = {0x07, 0xE3, 0xFF, 0x02, 0xFF, 0x29, 0xF4, 0x00};
 
-uint8_t RS485_RXFRAME[10];
+uint8_t RS485_RXFRAME[64];
 
 bool register_content_ok = false;
 
@@ -261,108 +261,23 @@ static uint8_t rx_index = 0;
 
 void receive_RS485()  // Runs as fast as possible to handle the serial stream
 {
-  currentMillis = millis();
-
-  if (datalayer.system.status.battery_allows_contactor_closing & !contactorMillis) {
-    contactorMillis = currentMillis;
-  }
-  if (currentMillis - contactorMillis >= INTERVAL_2_S & !RX_allow) {
-    RX_allow = true;
-    dbg_message("RX_allow -> true");
+  if (!Serial2.available()) {
+    return;
   }
 
-  if (startupMillis) {
-    if (((currentMillis - startupMillis) >= INTERVAL_2_S & currentMillis - startupMillis <= 7000) &
-        datalayer.system.status.inverter_allows_contactor_closing) {
-      // Disconnect allowed only, when curren zero
-      if (datalayer.battery.status.current_dA == 0) {
-        datalayer.system.status.inverter_allows_contactor_closing = false;
-        dbg_message("inverter_allows_contactor_closing -> false");
-      }
-    } else if (((currentMillis - startupMillis) >= 7000) &
-               datalayer.system.status.inverter_allows_contactor_closing == false) {
-      datalayer.system.status.inverter_allows_contactor_closing = true;
-      dbg_message("inverter_allows_contactor_closing -> true");
-    }
-  }
+  uint8_t next = Serial2.read();
+  RS485_RXFRAME[rx_index] = next;
 
-  if (B1_delay) {
-    if ((currentMillis - B1_last_millis) > INTERVAL_1_S) {
-      send_kostal(frameB1b, 8);
-      B1_delay = false;
-      dbg_message("B1_delay -> false");
-    }
-  } else if (Serial2.available()) {
-    RS485_RXFRAME[rx_index] = Serial2.read();
-    if (RX_allow) {
-      rx_index++;
-      if (RS485_RXFRAME[rx_index - 1] == 0x00) {
-        if ((rx_index == 10) && (RS485_RXFRAME[0] == 0x09) && register_content_ok) {
-          dbg_frame(RS485_RXFRAME, 10, "RX");
-          rx_index = 0;
-          if (check_kostal_frame_crc()) {
-            incoming_message_counter = RS485_HEALTHY;
-            bool headerA = true;
-            bool headerB = true;
-            for (uint8_t i = 0; i < 5; i++) {
-              if (RS485_RXFRAME[i + 1] != KOSTAL_FRAMEHEADER[i]) {
-                headerA = false;
-              }
-              if (RS485_RXFRAME[i + 1] != KOSTAL_FRAMEHEADER2[i]) {
-                headerB = false;
-              }
-            }
-
-            // "frame B1", maybe reset request, seen after battery power on/partial data
-            if (headerB && (RS485_RXFRAME[6] == 0x5E) && (RS485_RXFRAME[7] == 0xFF)) {
-              send_kostal(frameB1, 10);
-              B1_delay = true;
-              dbg_message("B1_delay -> true");
-              B1_last_millis = currentMillis;
-            }
-
-            // "frame B1", maybe reset request, seen after battery power on/partial data
-            if (headerB && (RS485_RXFRAME[6] == 0x5E) && (RS485_RXFRAME[7] == 0x04)) {
-              send_kostal(frame4, 8);
-              // This needs more reverse engineering, disabled...
-            }
-
-            if (headerA && (RS485_RXFRAME[6] == 0x4A) && (RS485_RXFRAME[7] == 0x08)) {  // "frame 1"
-              send_kostal(frame1, 40);
-              if (!startupMillis) {
-                startupMillis = currentMillis;
-              }
-            }
-            if (headerA && (RS485_RXFRAME[6] == 0x4A) && (RS485_RXFRAME[7] == 0x04)) {  // "frame 2"
-              update_values_battery();
-              update_RS485_registers_inverter();
-              if (f2_startup_count < 15) {
-                f2_startup_count++;
-              }
-              byte tmpframe[64];  //copy values to prevent data manipulation during rewrite/crc calculation
-              memcpy(tmpframe, frame2, 64);
-              for (int i = 1; i < 63; i++) {
-                if (tmpframe[i] == 0x00) {
-                  tmpframe[i] = 0x01;
-                }
-              }
-              tmpframe[62] = calculate_longframe_crc(tmpframe, 62);
-              send_kostal(tmpframe, 64);
-            }
-            if (headerA && (RS485_RXFRAME[6] == 0x53) && (RS485_RXFRAME[7] == 0x03)) {  // "frame 3"
-              send_kostal(frame3, 9);
-            }
-          }
-        } else {
-          dbg_frame(RS485_RXFRAME, 10, "RX (dropped)");
-        }
-        rx_index = 0;
-      }
-    }
-    if (rx_index >= 10) {
-      dbg_frame(RS485_RXFRAME, 10, "RX (!RX_allow)");
+  if (next == 0) {
+      dbg_frame(RS485_RXFRAME, rx_index + 1, "SNIFF");
       rx_index = 0;
-    }
+      memset(RS485_RXFRAME, 0, 64);
+  } else if (rx_index == 63) {
+      dbg_frame(RS485_RXFRAME, rx_index + 1, "SNIFF (overflow)");
+      rx_index = 0;
+      memset(RS485_RXFRAME, 0, 64);
+  } else {
+      rx_index++;
   }
 }
 
