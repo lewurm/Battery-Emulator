@@ -258,9 +258,14 @@ void update_RS485_registers_inverter() {
 }
 
 static uint8_t rx_index = 0;
+static uint8_t first = 1;
 
 void receive_RS485()  // Runs as fast as possible to handle the serial stream
 {
+  if (first) {
+      first = 0;
+      logging.println("Hello from RS485 Sniffer");
+  }
   if (!Serial2.available()) {
     return;
   }

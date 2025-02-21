@@ -54,6 +54,7 @@ void update_values_battery() { /* This function puts fake values onto the parame
   datalayer.battery.status.CAN_battery_still_alive = CAN_STILL_ALIVE;
 
 /*Finally print out values to serial if configured to do so*/
+#if 0
 #ifdef DEBUG_LOG
   logging.println("FAKE Values going to inverter");
   print_units("SOH%: ", (datalayer.battery.status.soh_pptt * 0.01), "% ");
@@ -66,6 +67,7 @@ void update_values_battery() { /* This function puts fake values onto the parame
   print_units(", Max cell voltage: ", datalayer.battery.status.cell_max_voltage_mV, "mV ");
   print_units(", Min cell voltage: ", datalayer.battery.status.cell_min_voltage_mV, "mV ");
   logging.println("");
+#endif
 #endif
 }
 
@@ -107,6 +109,7 @@ void update_values_battery2() {  // Handle the values coming in from battery #2
   datalayer.battery2.status.CAN_battery_still_alive = CAN_STILL_ALIVE;
 
 /*Finally print out values to serial if configured to do so*/
+#if 0
 #ifdef DEBUG_LOG
   logging.println("FAKE Values  battery 2 going to inverter");
   print_units("SOH 2 %: ", (datalayer.battery2.status.soh_pptt * 0.01), "% ");
@@ -119,6 +122,7 @@ void update_values_battery2() {  // Handle the values coming in from battery #2
   print_units(", Max cell voltage 2: ", datalayer.battery2.status.cell_max_voltage_mV, "mV ");
   print_units(", Min cell voltage 2: ", datalayer.battery2.status.cell_min_voltage_mV, "mV ");
   logging.println("");
+#endif
 #endif
 }
 
