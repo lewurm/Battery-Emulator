@@ -891,8 +891,11 @@ void transmit_can_battery() {
       }
       previousMillis20 = currentMillis;
 
+      BMW_10B.data.u8[1] = 0x00;  // default, Open contactors
       if (startup_counter_contactor < 160) {
         startup_counter_contactor++;
+      } else if (!datalayer.system.status.inverter_allows_contactor_closing) {
+        // inverter not ready yet
       } else {                      //After 160 messages, turn on the request
         BMW_10B.data.u8[1] = 0x10;  // Close contactors
       }
